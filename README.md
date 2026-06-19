@@ -1,14 +1,17 @@
 # pyaireader
 
-Local AI Evidence Reader MCP for AI agents.
+Local Jina Reader-style Evidence Reader MCP for AI agents.
 
-`pyaireader` is a local evidence reader for AI agents. It turns public web pages into clean, compact, auditable evidence packs that tools such as Codex, Claude Code, and other MCP-capable agents can actually use.
+`pyaireader` is a local Jina Reader-style web reader for AI agents. It turns public web pages into clean, compact, auditable evidence packs that tools such as Codex, Claude Code, and other MCP-capable agents can actually use.
 
-It was created because AI agents do not need a "webpage viewer". They need reliable evidence.
+It was created for a simple reason: AI agents often fail to read real web pages. Direct fetching may return JavaScript shells, login pages, navigation noise, or stale fragments instead of the actual content. Remote reader services such as Jina Reader are useful, but they can bring quota limits, rate limits, cache freshness problems, and limited local traceability. `pyaireader` brings that reader layer onto your own machine.
+
+It is not affiliated with Jina AI. The point is the workflow: a local reader that gives agents usable evidence instead of unreliable page dumps.
 
 Before `pyaireader`, the common workflow had three hard problems:
 
 - Direct HTTP fetching often returned JavaScript shells, login chrome, noisy navigation, or short useless text.
+- Remote reader services could help, but quota, rate limit, cache freshness, and external dependency issues made them hard to rely on as the only path.
 - Browser automation could read more pages, but it was slow, expensive, hard to audit, and too heavy as the first step.
 - Even when the page was fetched, agents received raw text without clear evidence snippets, numbers, dates, quality signals, or trace data. That made research workflows fragile: the model could quote UI noise, over-trust bad pages, or treat malicious page text as instructions.
 
@@ -23,7 +26,7 @@ public URL -> safety -> fetch -> extract -> clean -> evidence -> quality -> trac
 The value is practical:
 
 - Agents get structured evidence instead of noisy page dumps.
-- Local workflows avoid depending on a remote reader service for every URL.
+- Local workflows avoid depending on remote reader quotas or stale external caches for every URL.
 - Fetch cost stays controlled: `HTTP -> Scrapling -> raw browser`, not browser first.
 - Every result carries `quality` and `trace`, so bad reads are diagnosable instead of silently trusted.
 - Financial and research workflows get first-class fields such as `evidence`, `numbers`, `dates`, `entities`, and `financial_events`.
