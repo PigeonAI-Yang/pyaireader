@@ -79,6 +79,27 @@ uv sync --extra dev --extra extractors --extra browser --extra pdf
 uv run playwright install chromium
 ```
 
+### 全局命令安装
+
+如果你希望在任意项目目录里直接运行 `pyaireader`，可以安装 Windows shim：
+
+```powershell
+.\scripts\install-global-shim.ps1
+```
+
+安装后可以在任何目录执行：
+
+```powershell
+pyaireader read "https://example.com" --pretty
+pyaireader inspect "https://example.com" --pretty
+```
+
+这个 shim 会调用当前仓库：
+
+```text
+uv --directory <repo-path> run pyaireader ...
+```
+
 ## 快速试用
 
 读取一个网页：
@@ -122,6 +143,14 @@ browser_only
 ```text
 HTTP → Scrapling → raw browser
 ```
+
+## 三种入口怎么选
+
+- **MCP**：给 Codex Desktop、Codex CLI、Claude Code CLI 这类 Agent 用。
+- **CLI**：给其他项目里的脚本、命令行 workflow、同步后端任务用。
+- **HTTP API**：给长期运行的应用服务、批量任务、多个调用方共用。
+
+不要让普通后端 runtime 依赖 Codex Desktop 内部挂载的 MCP。后端要稳定接入，优先用全局 CLI；如果要复用常驻进程和缓存，再用 HTTP API。
 
 ## MCP 使用
 
@@ -174,7 +203,7 @@ If an older client only exposes read_url_for_ai, it is compatible with read_url.
 
 ## HTTP API
 
-如果调用方不是 Agent，而是普通程序，可以启动 HTTP API：
+如果调用方不是 Agent，而是普通程序、后端服务或批量 workflow，可以启动 HTTP API：
 
 ```powershell
 uv run pyaireader-api --host 127.0.0.1 --port 8765

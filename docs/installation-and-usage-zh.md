@@ -170,7 +170,30 @@ uv run playwright install chromium
 > - 不建议一上来就把 browser 放最前面，成本高、速度慢。
 > - 对大多数公开网页，建议先让 HTTP 和 Scrapling 试试。
 
-## 4. 快速试试
+## 4. 安装全局命令
+
+如果你希望在任意项目目录里直接运行 `pyaireader`，可以安装 Windows shim：
+
+```powershell
+.\scripts\install-global-shim.ps1
+```
+
+安装后可以在任何目录执行：
+
+```powershell
+pyaireader read "https://example.com" --pretty
+pyaireader inspect "https://example.com" --pretty
+```
+
+这个 shim 内部会调用当前仓库：
+
+```text
+uv --directory <repo-path> run pyaireader ...
+```
+
+如果终端提示找不到 `pyaireader`，把脚本输出的 shim 目录加入用户 PATH，再重开终端。
+
+## 5. 快速试试
 
 **跑测试：**
 
@@ -201,7 +224,7 @@ uv run pyaireader read https://example.com --pretty
 - `quality`
 - `trace`
 
-## 5. CLI 怎么用
+## 6. CLI 怎么用
 
 ### 读取单个 URL
 
@@ -286,7 +309,15 @@ uv run pyaireader clear-cache --domain example.com
 uv run pyaireader clear-cache
 ```
 
-## 6. 通过 MCP 给 Agent 用（推荐）
+## 7. 三种入口怎么选
+
+- **MCP**：给 Codex Desktop、Codex CLI、Claude Code CLI 这类 Agent 用。
+- **CLI**：给其他项目里的脚本、命令行 workflow、同步后端任务用。
+- **HTTP API**：给长期运行的应用服务、批量任务、多个调用方共用。
+
+不要让普通后端 runtime 依赖 Codex Desktop 内部挂载的 MCP。后端要稳定接入，优先用全局 CLI；如果要复用常驻进程和缓存，再用 HTTP API。
+
+## 8. 通过 MCP 给 Agent 用（推荐）
 
 这是最主要的用法——让 AI Agent 通过 MCP 调用你的本地阅读器。
 
@@ -367,9 +398,9 @@ Prefer evidence, key_points, quality, and trace over raw page text.
 If an older client only exposes read_url_for_ai, it is compatible with read_url.
 ```
 
-## 7. HTTP API（给普通程序用）
+## 9. HTTP API（给普通程序用）
 
-如果调用方不是 Agent，而是你自己的程序，用 HTTP API 会更方便。
+如果调用方不是 Agent，而是你自己的程序、后端服务或批量 workflow，用 HTTP API 会更方便。
 
 **启动服务：**
 
@@ -415,7 +446,7 @@ curl -X POST http://127.0.0.1:8765/v1/cache/clear `
   -d "{\"domain\":\"example.com\"}"
 ```
 
-## 8. 配置项
+## 10. 配置项
 
 你可以复制示例配置来修改：
 
@@ -439,7 +470,7 @@ PYAIREADER_MAX_REDIRECTS=5
 PYAIREADER_BLOCK_PRIVATE_NETWORK=true
 ```
 
-## 9. 输出字段怎么看
+## 11. 输出字段怎么看
 
 一次典型的 `read_url` 调用返回会像这样：
 
@@ -488,7 +519,7 @@ PYAIREADER_BLOCK_PRIVATE_NETWORK=true
 - `quality`：本次读取的质量等级，`strong / usable / weak / failed`。
 - `trace`：抓取引擎、抽取器、缓存命中情况、问题标记等诊断信息。
 
-## 10. 安全边界
+## 12. 安全边界
 
 **允许：**
 
@@ -507,7 +538,7 @@ PYAIREADER_BLOCK_PRIVATE_NETWORK=true
 
 每次重定向都会重新做一次 URL 安全检查。
 
-## 11. 常见问题
+## 13. 常见问题
 
 ### `browser_only` 失败
 
@@ -564,7 +595,7 @@ uv run pyaireader read "https://目标URL" --fetch-strategy scrapling_first --by
 uv run pyaireader read "https://目标URL" --fetch-strategy browser_only --bypass-cache --pretty
 ```
 
-## 12. 开发者命令
+## 14. 开发者命令
 
 **安装完整开发环境：**
 

@@ -51,7 +51,7 @@ def _build_server():
 
     @mcp.tool()
     def reader_health() -> dict:
-        """Return pyaireader MCP capabilities and local runtime defaults."""
+        """Return local reader capabilities, tool list, default parameters, cache path, and safety boundaries."""
         config = ReaderConfig.from_env()
         return {
             "schema_version": HEALTH_SCHEMA_VERSION,
@@ -108,7 +108,7 @@ def _build_server():
         max_entity_items: int = 40,
         return_format: ReturnFormatArg = "json",
     ) -> dict:
-        """Read a public URL and return trusted schema around untrusted web evidence."""
+        """Read key content from a public URL for an AI Agent. Removes UI noise such as login buttons, navigation, ads, recommendation feeds, and footers. Returns clean_text, evidence, numbers, dates, entities, quality, and trace."""
         return _read_url_impl(
             url=url,
             fetch_strategy=fetch_strategy,
@@ -137,7 +137,7 @@ def _build_server():
         max_entity_items: int = 40,
         return_format: ReturnFormatArg = "json",
     ) -> dict:
-        """Read a public URL and return an AI-ready evidence pack with trace and quality data."""
+        """Compatibility alias for read_url. Read key content from a public URL, remove UI noise, and return clean_text, evidence, quality, and trace for an AI Agent."""
         return _read_url_impl(
             url=url,
             fetch_strategy=fetch_strategy,
@@ -161,7 +161,7 @@ def _build_server():
         max_total_chars_per_url: int = 16000,
         max_clean_text_chars_per_url: int = 12000,
     ) -> dict:
-        """Read multiple public URLs and return one schema-stable result per URL."""
+        """Read key content from multiple public URLs for an AI Agent. Returns schema-stable clean_text, evidence, quality, and trace results for each URL."""
         return _batch_read_urls_impl(
             urls=urls,
             fetch_strategy=fetch_strategy,
@@ -180,7 +180,7 @@ def _build_server():
         max_total_chars_per_url: int = 16000,
         max_clean_text_chars_per_url: int = 12000,
     ) -> dict:
-        """Read multiple public URLs and return one evidence result per URL."""
+        """Compatibility alias for batch_read_urls. Read key content from multiple public URLs and return one result per URL."""
         return _batch_read_urls_impl(
             urls=urls,
             fetch_strategy=fetch_strategy,
@@ -197,7 +197,7 @@ def _build_server():
         bypass_cache: bool = True,
         html_preview_chars: int = 2000,
     ) -> dict:
-        """Inspect fetch/extract diagnostics for a public URL without returning full clean_text."""
+        """Diagnose why a public URL reads poorly. Returns fetch, extraction, quality, and trace diagnostics without returning the full clean_text."""
         fetch_strategy = _validate_fetch_strategy(fetch_strategy)
         _validate_positive_int("html_preview_chars", html_preview_chars)
         return get_pipeline().inspect(

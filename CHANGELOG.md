@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Windows global CLI shim installer for calling `pyaireader` from any project directory.
+
+### Changed
+
+- Clarified MCP tool descriptions so Agents can recognize URL reading, UI noise removal, and key content extraction use cases.
+- Documented the intended boundary between MCP for Agents, CLI for workflows, and HTTP API for application runtimes.
+
 ## 0.2.0 - 2026-06-19
 
 ### Added

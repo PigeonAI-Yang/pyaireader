@@ -36,6 +36,30 @@ def test_mcp_server_registers_expected_tools() -> None:
     }
 
 
+def test_mcp_tool_descriptions_point_agents_to_reader_use_case() -> None:
+    from pyaireader.mcp.server import _build_server
+
+    mcp = _build_server()
+    tools = asyncio.run(mcp.list_tools())
+    descriptions = {tool.name: tool.description or "" for tool in tools}
+
+    read_description = descriptions["read_url"]
+    assert "key content" in read_description
+    assert "UI noise" in read_description
+    assert "clean_text" in read_description
+    assert "quality" in read_description
+    assert "trace" in read_description
+
+    inspect_description = descriptions["inspect_url"]
+    assert "Diagnose why" in inspect_description
+    assert "without returning the full clean_text" in inspect_description
+
+    health_description = descriptions["reader_health"]
+    assert "tool list" in health_description
+    assert "default parameters" in health_description
+    assert "safety boundaries" in health_description
+
+
 def test_reader_health_returns_schema_defaults_and_safety() -> None:
     from pyaireader.mcp.server import _build_server
 
