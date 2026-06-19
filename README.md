@@ -8,7 +8,11 @@ It was created for a simple reason: AI agents often fail to read real web pages.
 
 It is not affiliated with Jina AI. The point is the workflow: a local reader that gives agents usable evidence instead of unreliable page dumps.
 
-Before `pyaireader`, the common workflow had three hard problems:
+X/Twitter posts are a typical example. Give a normal AI agent a single `x.com/.../status/...` URL and it often cannot fetch the full post body. Direct fetching may return a login shell or JavaScript app shell. Public search results may only expose a short snippet, a cached title, or a third-party summary. For research and financial workflows, that is not enough: a snippet is not the source, and UI noise can be misread as evidence.
+
+`pyaireader` is designed to try for the original content first. If it cannot read the page well enough, it should return a clear `quality` result and `trace` instead of pretending that a search snippet was the full page.
+
+Before `pyaireader`, the common workflow had four hard problems:
 
 - Direct HTTP fetching often returned JavaScript shells, login chrome, noisy navigation, or short useless text.
 - Remote reader services could help, but quota, rate limit, cache freshness, and external dependency issues made them hard to rely on as the only path.
