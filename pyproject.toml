@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyaireader"
+version = "0.1.0"
+description = "Local AI Evidence Reader MCP"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+dependencies = [
+    "mcp>=1.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/PigeonAI-Yang/pyaireader"
+Repository = "https://github.com/PigeonAI-Yang/pyaireader"
+Issues = "https://github.com/PigeonAI-Yang/pyaireader/issues"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.5.0",
+]
+extractors = [
+    "beautifulsoup4>=4.12.0",
+    "lxml>=5.0.0",
+    "trafilatura>=2.0.0",
+    "readability-lxml>=0.8.1",
+]
+browser = [
+    "browserforge>=1.2.0",
+    "curl-cffi>=0.7.0",
+    "msgspec>=0.18.0",
+    "patchright>=1.44.0",
+    "playwright>=1.44.0",
+    "scrapling>=0.2.0",
+]
+pdf = [
+    "pymupdf>=1.24.0",
+]
+
+[project.scripts]
+pyaireader = "pyaireader.cli.main:main"
+pyaireader-mcp = "pyaireader.mcp.server:main"
+pyaireader-api = "pyaireader.http.api:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = [
+    "unit: fast local tests",
+    "integration: local integration tests",
+    "network: tests requiring public network",
+    "browser: tests requiring Playwright/browser",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
