@@ -7,6 +7,11 @@ from typing import Any, Literal
 FetchStrategy = Literal["auto", "http_only", "scrapling_first", "browser_first", "browser_only"]
 QualityLevel = Literal["strong", "usable", "weak", "failed"]
 
+READ_RESULT_SCHEMA_VERSION = "pyaireader.read_result.v1"
+INSPECT_RESULT_SCHEMA_VERSION = "pyaireader.inspect_result.v1"
+BATCH_READ_RESULT_SCHEMA_VERSION = "pyaireader.batch_read_result.v1"
+HEALTH_SCHEMA_VERSION = "pyaireader.health.v1"
+
 
 @dataclass(frozen=True)
 class ReadUrlRequest:
@@ -190,6 +195,18 @@ class ReaderTrace:
         return data
 
 
+@dataclass(frozen=True)
+class ReaderErrorPayload:
+    code: str
+    message: str
+    retryable: bool
+    suggested_next_action: str
+    type: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
 @dataclass
 class FetchResult:
     url: str
@@ -213,6 +230,7 @@ class ReadUrlResult:
     url: str
     normalized_url: str
     fetched_at: str
+    schema_version: str = READ_RESULT_SCHEMA_VERSION
     final_url: str | None = None
     domain: str | None = None
     title: str | None = None
@@ -231,7 +249,7 @@ class ReadUrlResult:
     financial_events: list[FinancialEvent] = field(default_factory=list)
     quality: ReaderQuality | None = None
     trace: ReaderTrace | None = None
-    error: dict[str, Any] | None = None
+    error: ReaderErrorPayload | dict[str, Any] | None = None
     content_hash: str | None = None
     raw_html_hash: str | None = None
 
@@ -244,4 +262,6 @@ class ReadUrlResult:
         data["financial_events"] = [item.to_dict() for item in self.financial_events]
         data["quality"] = self.quality.to_dict() if self.quality else None
         data["trace"] = self.trace.to_dict() if self.trace else None
+        if isinstance(self.error, ReaderErrorPayload):
+            data["error"] = self.error.to_dict()
         return data

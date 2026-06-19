@@ -4,7 +4,15 @@ from importlib.metadata import PackageNotFoundError, version
 from typing import Literal
 
 from pyaireader.config import ReaderConfig
-from pyaireader.models import BatchReadUrlsRequest, InspectUrlRequest, ReadUrlRequest
+from pyaireader.models import (
+    BATCH_READ_RESULT_SCHEMA_VERSION,
+    HEALTH_SCHEMA_VERSION,
+    INSPECT_RESULT_SCHEMA_VERSION,
+    READ_RESULT_SCHEMA_VERSION,
+    BatchReadUrlsRequest,
+    InspectUrlRequest,
+    ReadUrlRequest,
+)
 from pyaireader.reader import ReaderPipeline
 
 
@@ -13,6 +21,15 @@ ReturnFormatArg = Literal["json", "markdown"]
 
 FETCH_STRATEGIES = {"auto", "http_only", "scrapling_first", "browser_first", "browser_only"}
 RETURN_FORMATS = {"json", "markdown"}
+MCP_TOOLS = [
+    "reader_health",
+    "read_url",
+    "read_url_for_ai",
+    "batch_read_urls",
+    "batch_read_urls_for_ai",
+    "inspect_url",
+    "clear_reader_cache",
+]
 
 _pipeline: ReaderPipeline | None = None
 
@@ -37,26 +54,74 @@ def _build_server():
         """Return pyaireader MCP capabilities and local runtime defaults."""
         config = ReaderConfig.from_env()
         return {
+            "schema_version": HEALTH_SCHEMA_VERSION,
             "success": True,
             "name": "pyaireader",
             "version": _package_version(),
             "transport": "stdio",
             "content_source": "untrusted_web",
-            "tools": [
-                "reader_health",
-                "read_url_for_ai",
-                "batch_read_urls_for_ai",
-                "inspect_url",
-                "clear_reader_cache",
-            ],
+            "tools": MCP_TOOLS,
+            "schemas": {
+                "read_result": READ_RESULT_SCHEMA_VERSION,
+                "inspect_result": INSPECT_RESULT_SCHEMA_VERSION,
+                "batch_read_result": BATCH_READ_RESULT_SCHEMA_VERSION,
+                "health": HEALTH_SCHEMA_VERSION,
+            },
             "fetch_strategies": sorted(FETCH_STRATEGIES),
+            "return_formats": sorted(RETURN_FORMATS),
+            "default_parameters": {
+                "fetch_strategy": "auto",
+                "bypass_cache": False,
+                "ttl_seconds": None,
+                "max_total_chars": config.max_total_chars,
+                "max_clean_text_chars": config.max_clean_text_chars,
+                "max_evidence_items": config.max_evidence_items,
+                "max_number_mentions": config.max_number_mentions,
+                "max_date_mentions": config.max_date_mentions,
+                "max_entity_items": config.max_entity_items,
+                "return_format": "json",
+                "batch_max_concurrency": 3,
+                "html_preview_chars": 2000,
+            },
             "cache_path": str(config.cache_path),
             "safety": {
                 "public_http_https_only": True,
                 "blocks_private_networks": True,
                 "redirects_rechecked": True,
+                "blocks_userinfo_urls": True,
+                "blocks_metadata_ip": True,
+                "content_is_untrusted_evidence": True,
             },
         }
+
+    @mcp.tool()
+    def read_url(
+        url: str,
+        fetch_strategy: FetchStrategyArg = "auto",
+        bypass_cache: bool = False,
+        ttl_seconds: int | None = None,
+        max_total_chars: int = 16000,
+        max_clean_text_chars: int = 12000,
+        max_evidence_items: int = 12,
+        max_number_mentions: int = 30,
+        max_date_mentions: int = 30,
+        max_entity_items: int = 40,
+        return_format: ReturnFormatArg = "json",
+    ) -> dict:
+        """Read a public URL and return trusted schema around untrusted web evidence."""
+        return _read_url_impl(
+            url=url,
+            fetch_strategy=fetch_strategy,
+            bypass_cache=bypass_cache,
+            ttl_seconds=ttl_seconds,
+            max_total_chars=max_total_chars,
+            max_clean_text_chars=max_clean_text_chars,
+            max_evidence_items=max_evidence_items,
+            max_number_mentions=max_number_mentions,
+            max_date_mentions=max_date_mentions,
+            max_entity_items=max_entity_items,
+            return_format=return_format,
+        )
 
     @mcp.tool()
     def read_url_for_ai(
@@ -73,15 +138,7 @@ def _build_server():
         return_format: ReturnFormatArg = "json",
     ) -> dict:
         """Read a public URL and return an AI-ready evidence pack with trace and quality data."""
-        fetch_strategy = _validate_fetch_strategy(fetch_strategy)
-        return_format = _validate_return_format(return_format)
-        _validate_positive_int("max_total_chars", max_total_chars)
-        _validate_positive_int("max_clean_text_chars", max_clean_text_chars)
-        _validate_positive_int("max_evidence_items", max_evidence_items)
-        _validate_positive_int("max_number_mentions", max_number_mentions)
-        _validate_positive_int("max_date_mentions", max_date_mentions)
-        _validate_positive_int("max_entity_items", max_entity_items)
-        request = ReadUrlRequest(
+        return _read_url_impl(
             url=url,
             fetch_strategy=fetch_strategy,
             bypass_cache=bypass_cache,
@@ -94,7 +151,25 @@ def _build_server():
             max_entity_items=max_entity_items,
             return_format=return_format,
         )
-        return get_pipeline().read(request).to_dict()
+
+    @mcp.tool()
+    def batch_read_urls(
+        urls: list[str],
+        fetch_strategy: FetchStrategyArg = "auto",
+        bypass_cache: bool = False,
+        max_concurrency: int = 3,
+        max_total_chars_per_url: int = 16000,
+        max_clean_text_chars_per_url: int = 12000,
+    ) -> dict:
+        """Read multiple public URLs and return one schema-stable result per URL."""
+        return _batch_read_urls_impl(
+            urls=urls,
+            fetch_strategy=fetch_strategy,
+            bypass_cache=bypass_cache,
+            max_concurrency=max_concurrency,
+            max_total_chars_per_url=max_total_chars_per_url,
+            max_clean_text_chars_per_url=max_clean_text_chars_per_url,
+        )
 
     @mcp.tool()
     def batch_read_urls_for_ai(
@@ -106,13 +181,7 @@ def _build_server():
         max_clean_text_chars_per_url: int = 12000,
     ) -> dict:
         """Read multiple public URLs and return one evidence result per URL."""
-        fetch_strategy = _validate_fetch_strategy(fetch_strategy)
-        if not urls:
-            raise ValueError("urls must not be empty")
-        _validate_positive_int("max_concurrency", max_concurrency)
-        _validate_positive_int("max_total_chars_per_url", max_total_chars_per_url)
-        _validate_positive_int("max_clean_text_chars_per_url", max_clean_text_chars_per_url)
-        request = BatchReadUrlsRequest(
+        return _batch_read_urls_impl(
             urls=urls,
             fetch_strategy=fetch_strategy,
             bypass_cache=bypass_cache,
@@ -120,7 +189,6 @@ def _build_server():
             max_total_chars_per_url=max_total_chars_per_url,
             max_clean_text_chars_per_url=max_clean_text_chars_per_url,
         )
-        return get_pipeline().batch_read(request)
 
     @mcp.tool()
     def inspect_url(
@@ -149,6 +217,70 @@ def _build_server():
     return mcp
 
 
+def _read_url_impl(
+    *,
+    url: str,
+    fetch_strategy: FetchStrategyArg = "auto",
+    bypass_cache: bool = False,
+    ttl_seconds: int | None = None,
+    max_total_chars: int = 16000,
+    max_clean_text_chars: int = 12000,
+    max_evidence_items: int = 12,
+    max_number_mentions: int = 30,
+    max_date_mentions: int = 30,
+    max_entity_items: int = 40,
+    return_format: ReturnFormatArg = "json",
+) -> dict:
+    fetch_strategy = _validate_fetch_strategy(fetch_strategy)
+    return_format = _validate_return_format(return_format)
+    _validate_positive_int("max_total_chars", max_total_chars)
+    _validate_positive_int("max_clean_text_chars", max_clean_text_chars)
+    _validate_positive_int("max_evidence_items", max_evidence_items)
+    _validate_positive_int("max_number_mentions", max_number_mentions)
+    _validate_positive_int("max_date_mentions", max_date_mentions)
+    _validate_positive_int("max_entity_items", max_entity_items)
+    request = ReadUrlRequest(
+        url=url,
+        fetch_strategy=fetch_strategy,
+        bypass_cache=bypass_cache,
+        ttl_seconds=ttl_seconds,
+        max_total_chars=max_total_chars,
+        max_clean_text_chars=max_clean_text_chars,
+        max_evidence_items=max_evidence_items,
+        max_number_mentions=max_number_mentions,
+        max_date_mentions=max_date_mentions,
+        max_entity_items=max_entity_items,
+        return_format=return_format,
+    )
+    return get_pipeline().read(request).to_dict()
+
+
+def _batch_read_urls_impl(
+    *,
+    urls: list[str],
+    fetch_strategy: FetchStrategyArg = "auto",
+    bypass_cache: bool = False,
+    max_concurrency: int = 3,
+    max_total_chars_per_url: int = 16000,
+    max_clean_text_chars_per_url: int = 12000,
+) -> dict:
+    fetch_strategy = _validate_fetch_strategy(fetch_strategy)
+    if not urls:
+        raise ValueError("urls must not be empty")
+    _validate_positive_int("max_concurrency", max_concurrency)
+    _validate_positive_int("max_total_chars_per_url", max_total_chars_per_url)
+    _validate_positive_int("max_clean_text_chars_per_url", max_clean_text_chars_per_url)
+    request = BatchReadUrlsRequest(
+        urls=urls,
+        fetch_strategy=fetch_strategy,
+        bypass_cache=bypass_cache,
+        max_concurrency=max_concurrency,
+        max_total_chars_per_url=max_total_chars_per_url,
+        max_clean_text_chars_per_url=max_clean_text_chars_per_url,
+    )
+    return get_pipeline().batch_read(request)
+
+
 def main() -> None:
     server = _build_server()
     server.run(transport="stdio")
@@ -175,7 +307,7 @@ def _package_version() -> str:
     try:
         return version("pyaireader")
     except PackageNotFoundError:
-        return "0.1.0"
+        return "0.2.0"
 
 
 if __name__ == "__main__":

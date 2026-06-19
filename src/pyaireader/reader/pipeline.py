@@ -7,24 +7,28 @@ from uuid import uuid4
 from pyaireader.cache import SQLiteReaderCache
 from pyaireader.cache.sqlite_cache import CacheWritePolicy
 from pyaireader.config import ReaderConfig
-from pyaireader.errors import ReaderError
+from pyaireader.errors import ExtractionError, FetchError, ReaderError, UnsafeUrlError
 from pyaireader.extractors import ExtractedText, PdfExtractor, TextExtractor
 from pyaireader.fetchers import FetchResponse, HttpFetcher, PlaywrightFetcher, ScraplingFetcher
 from pyaireader.finance import extract_financial_events
 from pyaireader.models import (
+    BATCH_READ_RESULT_SCHEMA_VERSION,
     BatchReadUrlsRequest,
     CompanyMention,
     DateMention,
     EntityMention,
     EvidenceSnippet,
     FetchAttempt,
+    FinancialEvent,
+    INSPECT_RESULT_SCHEMA_VERSION,
     InspectUrlRequest,
     NumberMention,
+    READ_RESULT_SCHEMA_VERSION,
     ReadUrlRequest,
     ReadUrlResult,
+    ReaderErrorPayload,
     ReaderQuality,
     ReaderTrace,
-    FinancialEvent,
 )
 from pyaireader.processors import (
     extract_dates,
@@ -189,6 +193,7 @@ class ReaderPipeline:
             ]
         results = [self.read(item).to_dict() for item in requests]
         return {
+            "schema_version": BATCH_READ_RESULT_SCHEMA_VERSION,
             "success": True,
             "count": len(results),
             "success_count": sum(1 for result in results if result.get("success")),
@@ -225,6 +230,7 @@ class ReaderPipeline:
             trace.extractor = extracted.extractor
             trace.problem_flags = quality.flags
             return {
+                "schema_version": INSPECT_RESULT_SCHEMA_VERSION,
                 "success": True,
                 "url": inspect_request.url,
                 "normalized_url": normalized_url,
@@ -243,13 +249,15 @@ class ReaderPipeline:
                 "error": None,
             }
         except Exception as exc:
+            trace.problem_flags.append(_error_code(exc))
             return {
+                "schema_version": INSPECT_RESULT_SCHEMA_VERSION,
                 "success": False,
                 "url": inspect_request.url,
                 "fetched_at": fetched_at,
                 "quality": score_quality("", "", None, 0).to_dict(),
                 "trace": trace.to_dict(),
-                "error": {"type": exc.__class__.__name__, "message": str(exc)},
+                "error": _reader_error_payload(exc).to_dict(),
             }
 
     def clear_cache(self, url: str | None = None, domain: str | None = None) -> dict[str, Any]:
@@ -370,7 +378,7 @@ class ReaderPipeline:
             key_points=[],
             quality=score_quality("", "", None, 0),
             trace=trace,
-            error={"code": _error_code(exc), "type": exc.__class__.__name__, "message": message},
+            error=_reader_error_payload(exc, message=message),
         )
 
 
@@ -429,12 +437,60 @@ def _error_attempt(engine_name: str, url: str, exc: Exception) -> FetchAttempt:
 
 
 def _error_code(exc: Exception) -> str:
-    name = exc.__class__.__name__.lower()
-    if "unsafe" in name:
+    if isinstance(exc, UnsafeUrlError):
         return "unsafe_url"
+    if isinstance(exc, FetchError):
+        return "fetch_failed"
+    if isinstance(exc, ExtractionError):
+        return "extraction_failed"
+    if isinstance(exc, TimeoutError):
+        return "timeout"
+    if isinstance(exc, ValueError):
+        return "invalid_request"
+    name = exc.__class__.__name__.lower()
     if isinstance(exc, ReaderError) and str(exc).startswith("fetch_strategy not implemented"):
         return "not_implemented"
+    if isinstance(exc, ReaderError):
+        return "fetch_failed"
     return name
+
+
+def _reader_error_payload(exc: Exception, *, message: str | None = None) -> ReaderErrorPayload:
+    code = _error_code(exc)
+    return ReaderErrorPayload(
+        code=code,
+        message=message if message is not None else str(exc),
+        retryable=_error_retryable(code),
+        suggested_next_action=_suggested_next_action(code),
+        type=exc.__class__.__name__,
+    )
+
+
+def _error_retryable(code: str) -> bool:
+    return code in {
+        "fetch_failed",
+        "timeout",
+        "extraction_failed",
+        "httpstatuserror",
+        "connecterror",
+        "readtimeout",
+    }
+
+
+def _suggested_next_action(code: str) -> str:
+    if code == "unsafe_url":
+        return "use_public_http_or_https_url"
+    if code == "invalid_request":
+        return "fix_request_parameters"
+    if code == "timeout":
+        return "retry_with_longer_timeout_or_lighter_strategy"
+    if code in {"fetch_failed", "httpstatuserror", "connecterror", "readtimeout"}:
+        return "retry_with_scrapling_first_or_inspect_url"
+    if code == "extraction_failed":
+        return "inspect_url_or_retry_with_browser_only"
+    if code == "not_implemented":
+        return "choose_supported_fetch_strategy"
+    return "inspect_url"
 
 
 def _result_from_dict(data: dict[str, Any]) -> ReadUrlResult:
@@ -458,6 +514,7 @@ def _result_from_dict(data: dict[str, Any]) -> ReadUrlResult:
         url=data["url"],
         normalized_url=data.get("normalized_url", data["url"]),
         fetched_at=data["fetched_at"],
+        schema_version=data.get("schema_version", READ_RESULT_SCHEMA_VERSION),
         final_url=data.get("final_url"),
         domain=data.get("domain"),
         title=data.get("title"),

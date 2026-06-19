@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pyaireader.http.api import handle_api_request
+from pyaireader.models import HEALTH_SCHEMA_VERSION
 
 
 class FakePipeline:
@@ -30,6 +31,7 @@ def test_handle_health() -> None:
 
     assert status == 200
     assert payload["success"] is True
+    assert payload["schema_version"] == HEALTH_SCHEMA_VERSION
 
 
 def test_handle_read_endpoint() -> None:
@@ -44,3 +46,6 @@ def test_handle_unknown_endpoint() -> None:
 
     assert status == 404
     assert payload["success"] is False
+    assert payload["error"]["code"] == "not_found"
+    assert payload["error"]["retryable"] is False
+    assert payload["error"]["suggested_next_action"] == "use_supported_endpoint"

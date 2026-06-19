@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.0 - 2026-06-19
+
+### Added
+
+- Stable public result schema versions for read, inspect, batch, and health responses.
+- Short MCP tool names: `read_url` and `batch_read_urls`.
+- Compatibility aliases: `read_url_for_ai` and `batch_read_urls_for_ai`.
+- `reader_health` capability metadata for schemas, tools, defaults, safety, cache path, and transport.
+
+### Changed
+
+- Standardized failure payloads with `error.code`, `error.message`, `error.retryable`, and `error.suggested_next_action`.
+- Updated MCP documentation to recommend short tool names while preserving old names for existing Agent configs.
+
 ## 0.1.0 - 2026-06-19
 
 Initial public release.

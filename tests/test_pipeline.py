@@ -5,7 +5,13 @@ from pathlib import Path
 from pyaireader.cache import SQLiteReaderCache
 from pyaireader.config import ReaderConfig
 from pyaireader.fetchers import FetchResponse
-from pyaireader.models import ReadUrlRequest
+from pyaireader.models import (
+    BATCH_READ_RESULT_SCHEMA_VERSION,
+    INSPECT_RESULT_SCHEMA_VERSION,
+    READ_RESULT_SCHEMA_VERSION,
+    BatchReadUrlsRequest,
+    ReadUrlRequest,
+)
 from pyaireader.reader import ReaderPipeline
 
 
@@ -57,6 +63,7 @@ def test_read_url_for_ai_returns_evidence(tmp_path: Path) -> None:
     result = pipeline.read(ReadUrlRequest(url="https://example.com/article"))
 
     assert result.success is True
+    assert result.schema_version == READ_RESULT_SCHEMA_VERSION
     assert result.title == "测试公司公告"
     assert "12.5亿元" in result.clean_text
     assert result.evidence
@@ -91,8 +98,38 @@ def test_inspect_url_excludes_clean_text(tmp_path: Path) -> None:
 
     result = pipeline.inspect(ReadUrlRequest(url="https://example.com/article"))
 
+    assert result["schema_version"] == INSPECT_RESULT_SCHEMA_VERSION
     assert result["success"] is True
     assert result["trace"]["fetch_engine"] == "fake_http"
     assert "quality" in result
     assert "html_preview" in result
     assert "clean_text" not in result
+
+
+def test_batch_read_returns_schema_version(tmp_path: Path) -> None:
+    fetcher = FakeFetcher()
+    pipeline = make_pipeline(tmp_path, fetcher)
+
+    result = pipeline.batch_read(BatchReadUrlsRequest(urls=["https://example.com/article"]))
+
+    assert result["schema_version"] == BATCH_READ_RESULT_SCHEMA_VERSION
+    assert result["success"] is True
+    assert result["count"] == 1
+    assert result["results"][0]["schema_version"] == READ_RESULT_SCHEMA_VERSION
+
+
+def test_safety_failure_returns_stable_error_quality_and_trace(tmp_path: Path) -> None:
+    fetcher = FakeFetcher()
+    pipeline = make_pipeline(tmp_path, fetcher)
+
+    result = pipeline.read(ReadUrlRequest(url="http://127.0.0.1/private"))
+    payload = result.to_dict()
+
+    assert payload["schema_version"] == READ_RESULT_SCHEMA_VERSION
+    assert payload["success"] is False
+    assert payload["quality"] is not None
+    assert payload["trace"]["request_id"]
+    assert payload["error"]["code"] == "unsafe_url"
+    assert payload["error"]["message"]
+    assert payload["error"]["retryable"] is False
+    assert payload["error"]["suggested_next_action"] == "use_public_http_or_https_url"

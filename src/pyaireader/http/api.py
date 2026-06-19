@@ -6,13 +6,23 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
-from pyaireader.models import BatchReadUrlsRequest, InspectUrlRequest, ReadUrlRequest
+from pyaireader.models import (
+    HEALTH_SCHEMA_VERSION,
+    ReaderErrorPayload,
+    BatchReadUrlsRequest,
+    InspectUrlRequest,
+    ReadUrlRequest,
+)
 from pyaireader.reader import ReaderPipeline
 
 
 def handle_api_request(path: str, payload: dict[str, Any], pipeline: ReaderPipeline) -> tuple[int, dict]:
     if path == "/health":
-        return HTTPStatus.OK, {"success": True, "service": "pyaireader"}
+        return HTTPStatus.OK, {
+            "schema_version": HEALTH_SCHEMA_VERSION,
+            "success": True,
+            "service": "pyaireader",
+        }
     if path == "/v1/read":
         return HTTPStatus.OK, pipeline.read(ReadUrlRequest(**payload)).to_dict()
     if path == "/v1/batch-read":
@@ -26,7 +36,13 @@ def handle_api_request(path: str, payload: dict[str, Any], pipeline: ReaderPipel
         )
     return HTTPStatus.NOT_FOUND, {
         "success": False,
-        "error": {"code": "not_found", "message": f"unknown endpoint: {path}"},
+        "error": ReaderErrorPayload(
+            code="not_found",
+            message=f"unknown endpoint: {path}",
+            retryable=False,
+            suggested_next_action="use_supported_endpoint",
+            type="NotFound",
+        ).to_dict(),
     }
 
 
@@ -36,11 +52,27 @@ def make_handler(pipeline: ReaderPipeline):
 
         def do_GET(self) -> None:  # noqa: N802
             if self.path == "/health":
-                self._write_json(HTTPStatus.OK, {"success": True, "service": "pyaireader"})
+                self._write_json(
+                    HTTPStatus.OK,
+                    {
+                        "schema_version": HEALTH_SCHEMA_VERSION,
+                        "success": True,
+                        "service": "pyaireader",
+                    },
+                )
                 return
             self._write_json(
                 HTTPStatus.NOT_FOUND,
-                {"success": False, "error": {"code": "not_found", "message": self.path}},
+                {
+                    "success": False,
+                    "error": ReaderErrorPayload(
+                        code="not_found",
+                        message=self.path,
+                        retryable=False,
+                        suggested_next_action="use_supported_endpoint",
+                        type="NotFound",
+                    ).to_dict(),
+                },
             )
 
         def do_POST(self) -> None:  # noqa: N802
@@ -55,10 +87,13 @@ def make_handler(pipeline: ReaderPipeline):
                     HTTPStatus.BAD_REQUEST,
                     {
                         "success": False,
-                        "error": {
-                            "code": exc.__class__.__name__.lower(),
-                            "message": str(exc),
-                        },
+                        "error": ReaderErrorPayload(
+                            code=exc.__class__.__name__.lower(),
+                            message=str(exc),
+                            retryable=False,
+                            suggested_next_action="fix_request_parameters",
+                            type=exc.__class__.__name__,
+                        ).to_dict(),
                     },
                 )
 
