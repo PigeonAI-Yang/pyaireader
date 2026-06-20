@@ -659,7 +659,7 @@ def _package_version() -> str:
     try:
         return version("pyaireader")
     except PackageNotFoundError:
-        return "0.3.0"
+        return "0.4.0"
 
 
 if __name__ == "__main__":
