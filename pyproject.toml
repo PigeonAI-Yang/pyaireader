@@ -4,13 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyaireader"
-version = "0.2.0"
-description = "Local AI Evidence Reader MCP"
+version = "0.3.0"
+description = "Local webpage reader for AI agents"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
 dependencies = [
-    "mcp>=1.0.0",
+    "mcp>=1.28.0",
+    "pydantic>=2.0.0",
 ]
 
 [project.urls]
@@ -44,6 +45,7 @@ pdf = [
 [project.scripts]
 pyaireader = "pyaireader.cli.main:main"
 pyaireader-mcp = "pyaireader.mcp.server:main"
+pyaireader-mcp-http = "pyaireader.mcp.server:http_main"
 pyaireader-api = "pyaireader.http.api:main"
 
 [tool.setuptools.packages.find]

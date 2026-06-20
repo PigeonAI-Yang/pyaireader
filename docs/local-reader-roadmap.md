@@ -1,11 +1,11 @@
-# Local Jina Reader Roadmap
+# Local AI Reader Roadmap
 
 > 本文件是产品能力对标和工程路线图，不是公开宣传文案。
 > README、安装教程和用户-facing 文案应继续使用“本地网页阅读器”“远程网页阅读服务”等中性表达，不把项目包装成某个第三方品牌的官方兼容实现。
 
-## 目标：Local Jina Reader
+## 目标：Local AI Reader
 
-`pyaireader` 的真实目标是做一个本机运行的 Local Jina Reader：给 AI Agent 一个 URL，返回干净、紧凑、可诊断、可缓存、可追溯的网页内容。
+`pyaireader` 的真实目标是做一个本机运行的 AI 网页阅读器：给 AI Agent 一个 URL，返回干净、紧凑、可诊断、可缓存、可追溯的网页内容。
 
 核心输入输出：
 
@@ -32,9 +32,9 @@ URL -> AI-readable content + metadata + quality + trace + cache state
 - 不是远程 SaaS reader：默认本机运行，HTTP API 也先服务本机调用。
 - 不是投研专用工具：投研是最严格的早期场景，但 reader 能力应保持通用。
 
-## Jina Parity Matrix
+## Reader Capability Matrix
 
-这里的 parity 指“能力对齐”，不是 API 完全兼容，也不是品牌绑定。
+这里的 matrix 指“能力基线”，不是 API 完全兼容，也不是品牌绑定。
 
 | 能力 | 对标含义 | pyaireader 当前状态 | v0.2 建议 |
 | --- | --- | --- | --- |
@@ -309,7 +309,7 @@ v0.2 完成必须同时满足：
 
 ## 参考
 
-- Jina Reader: capability benchmark only, not public positioning.
+- Remote reader services: capability benchmark only, not public positioning.
 - MCP Tools specification: tool names, input schema, structured output, tool result semantics.
 - Firecrawl MCP: scrape / batch / map / crawl / extract 的工具分层可参考，但 pyaireader v0.x 不做 crawl。
 - Tavily MCP: search / extract 分离可参考，但 pyaireader v0.x 不做 search。

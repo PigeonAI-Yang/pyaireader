@@ -177,6 +177,8 @@ MCP server 注册这些工具：
 
 建议新接入的 Agent 使用 `read_url` 和 `batch_read_urls`。`read_url_for_ai`、`batch_read_urls_for_ai` 会继续保留，方便旧配置平滑迁移。
 
+MCP tools 会暴露 `outputSchema`、`structuredContent` 和 tool annotations。新客户端可以直接读取结构化结果；老客户端仍然可以读取文本 JSON。
+
 Codex Desktop / Codex CLI 配置：
 
 ```toml
@@ -200,6 +202,22 @@ For URL reading, call read_url.
 Prefer evidence, key_points, quality, and trace over raw page text.
 If an older client only exposes read_url_for_ai, it is compatible with read_url.
 ```
+
+### MCP Streamable HTTP
+
+如果 MCP host 支持 Streamable HTTP，可以启动本机 MCP HTTP endpoint：
+
+```powershell
+uv run pyaireader-mcp-http --host 127.0.0.1 --port 8000
+```
+
+endpoint：
+
+```text
+http://127.0.0.1:8000/mcp
+```
+
+这个入口是 MCP transport，不是普通 HTTP API。默认只建议监听 `127.0.0.1`，不要直接暴露到公网。
 
 ## HTTP API
 
@@ -241,6 +259,7 @@ curl -X POST http://127.0.0.1:8765/v1/read `
 
 - [中文安装与使用教程](docs/installation-and-usage-zh.md)
 - [MCP integration guide](docs/mcp-integration.md)
+- [Registry metadata candidate](docs/registry-server-json-candidate.json)
 - [Changelog](CHANGELOG.md)
 
 ## 测试

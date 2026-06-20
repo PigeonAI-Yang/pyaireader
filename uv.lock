@@ -971,10 +971,11 @@ wheels = [
 
 [[package]]
 name = "pyaireader"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "mcp" },
+    { name = "pydantic" },
 ]
 
 [package.optional-dependencies]
@@ -1006,10 +1007,11 @@ requires-dist = [
     { name = "browserforge", marker = "extra == 'browser'", specifier = ">=1.2.0" },
     { name = "curl-cffi", marker = "extra == 'browser'", specifier = ">=0.7.0" },
     { name = "lxml", marker = "extra == 'extractors'", specifier = ">=5.0.0" },
-    { name = "mcp", specifier = ">=1.0.0" },
+    { name = "mcp", specifier = ">=1.28.0" },
     { name = "msgspec", marker = "extra == 'browser'", specifier = ">=0.18.0" },
     { name = "patchright", marker = "extra == 'browser'", specifier = ">=1.44.0" },
     { name = "playwright", marker = "extra == 'browser'", specifier = ">=1.44.0" },
+    { name = "pydantic", specifier = ">=2.0.0" },
     { name = "pymupdf", marker = "extra == 'pdf'", specifier = ">=1.24.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "readability-lxml", marker = "extra == 'extractors'", specifier = ">=0.8.1" },

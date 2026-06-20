@@ -1,15 +1,26 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 - 2026-06-20
 
 ### Added
 
 - Windows global CLI shim installer for calling `pyaireader` from any project directory.
+- Explicit MCP `outputSchema` through Pydantic boundary models.
+- MCP `structuredContent` responses while keeping text JSON for older clients.
+- MCP tool annotations for read-only, destructive, idempotent, and open-world behavior.
+- `pyaireader-mcp-http` entry point for local MCP Streamable HTTP at `/mcp`.
+- Registry metadata candidate for a future official registry submission.
 
 ### Changed
 
 - Clarified MCP tool descriptions so Agents can recognize URL reading, UI noise removal, and key content extraction use cases.
 - Documented the intended boundary between MCP for Agents, CLI for workflows, and HTTP API for application runtimes.
+- Raised the MCP SDK dependency to the version family verified for structured output and Streamable HTTP.
+- Renamed the internal local reader roadmap to avoid public-facing third-party brand positioning.
+
+### Fixed
+
+- Reduced false `login_required` quality failures when a normal long article contains only navigation/login chrome.
 
 ## 0.2.0 - 2026-06-19
 

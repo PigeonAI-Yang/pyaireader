@@ -36,6 +36,31 @@ def test_mcp_server_registers_expected_tools() -> None:
     }
 
 
+def test_mcp_tools_expose_output_schema_and_annotations() -> None:
+    from pyaireader.mcp.server import _build_server
+
+    mcp = _build_server()
+    tools = asyncio.run(mcp.list_tools())
+    payloads = {tool.name: tool.model_dump(by_alias=True, exclude_none=True) for tool in tools}
+
+    for name, payload in payloads.items():
+        assert "outputSchema" in payload, name
+        assert payload["outputSchema"]["type"] == "object"
+        assert "success" in payload["outputSchema"]["properties"]
+        assert "annotations" in payload, name
+
+    assert payloads["read_url"]["outputSchema"] == payloads["read_url_for_ai"]["outputSchema"]
+    assert payloads["batch_read_urls"]["outputSchema"] == payloads["batch_read_urls_for_ai"][
+        "outputSchema"
+    ]
+    assert payloads["reader_health"]["annotations"]["readOnlyHint"] is True
+    assert payloads["reader_health"]["annotations"]["idempotentHint"] is True
+    assert payloads["read_url"]["annotations"]["openWorldHint"] is True
+    assert payloads["read_url"]["annotations"]["destructiveHint"] is False
+    assert payloads["clear_reader_cache"]["annotations"]["readOnlyHint"] is False
+    assert payloads["clear_reader_cache"]["annotations"]["destructiveHint"] is True
+
+
 def test_mcp_tool_descriptions_point_agents_to_reader_use_case() -> None:
     from pyaireader.mcp.server import _build_server
 
@@ -77,6 +102,27 @@ def test_reader_health_returns_schema_defaults_and_safety() -> None:
     assert payload["safety"]["content_is_untrusted_evidence"] is True
 
 
+def test_reader_health_reports_streamable_http_transport() -> None:
+    from pyaireader.mcp.server import _build_server
+
+    mcp = _build_server(transport_label="streamable-http", port=8123)
+    payload = _call_tool_json(mcp, "reader_health", {})
+
+    assert payload["transport"] == "streamable-http"
+    assert payload["mcp_http"]["enabled"] is True
+    assert payload["mcp_http"]["host"] == "127.0.0.1"
+    assert payload["mcp_http"]["port"] == 8123
+    assert payload["mcp_http"]["path"] == "/mcp"
+    assert "http://127.0.0.1:8123" in payload["mcp_http"]["allowed_origins"]
+
+
+def test_streamable_http_rejects_non_loopback_host() -> None:
+    from pyaireader.mcp.server import _build_server
+
+    with pytest.raises(ValueError, match="only supports loopback hosts"):
+        _build_server(transport_label="streamable-http", host="0.0.0.0")
+
+
 def test_read_url_aliases_share_result_shape(monkeypatch: pytest.MonkeyPatch) -> None:
     import pyaireader.mcp.server as server
 
@@ -90,6 +136,23 @@ def test_read_url_aliases_share_result_shape(monkeypatch: pytest.MonkeyPatch) ->
     assert short == long
     assert short["schema_version"] == READ_RESULT_SCHEMA_VERSION
     assert fake_pipeline.read_calls == 2
+
+
+def test_read_url_returns_structured_content(monkeypatch: pytest.MonkeyPatch) -> None:
+    import pyaireader.mcp.server as server
+
+    fake_pipeline = FakePipeline()
+    monkeypatch.setattr(server, "get_pipeline", lambda: fake_pipeline)
+    mcp = server._build_server()
+
+    text_payload, structured_payload = _call_tool_payloads(
+        mcp, "read_url", {"url": "https://example.com"}
+    )
+
+    assert structured_payload is not None
+    assert structured_payload == text_payload
+    assert structured_payload["schema_version"] == READ_RESULT_SCHEMA_VERSION
+    assert structured_payload["success"] is True
 
 
 def test_batch_read_url_aliases_are_available(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -141,6 +204,17 @@ class FakePipeline:
             "results": [],
         }
 
+    def inspect(self, request):
+        return {
+            "success": True,
+            "schema_version": "pyaireader.inspect_result.v1",
+            "url": request.url,
+            "html_preview": "",
+        }
+
+    def clear_cache(self, url=None, domain=None):
+        return {"success": True, "deleted": 1, "url": url, "domain": domain}
+
 
 class _Result:
     def __init__(self, payload):
@@ -151,6 +225,15 @@ class _Result:
 
 
 def _call_tool_json(mcp, name: str, arguments: dict) -> dict:
+    payload, _structured = _call_tool_payloads(mcp, name, arguments)
+    return payload
+
+
+def _call_tool_payloads(mcp, name: str, arguments: dict) -> tuple[dict, dict | None]:
     result = asyncio.run(mcp.call_tool(name, arguments))
-    assert len(result) == 1
-    return json.loads(result[0].text)
+    if isinstance(result, tuple):
+        content, structured = result
+    else:
+        content, structured = result, None
+    assert len(content) == 1
+    return json.loads(content[0].text), structured
