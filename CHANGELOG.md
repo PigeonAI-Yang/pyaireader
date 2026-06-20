@@ -31,12 +31,17 @@
 - Documented the boundary between reader cache and library/storage: cache is a temporary acceleration layer, while library/storage is the user material layer.
 - Updated `read_url` MCP annotations to reflect that the tool can write to local storage when called with `save=true`.
 - Kept SQLite as the default local store while documenting filesystem stores and future adapter directions instead of tying pyaireader to one project database.
+- Browser provider `auto` now auto-discovers user-started CDP endpoints on `PYAIREADER_BROWSER_CDP`, `127.0.0.1:9222`, and `127.0.0.1:9333`; it no longer silently opens pyaireader's managed persistent profile.
+- CDP browser reads now create background targets by default, so X search/detail collection does not repeatedly steal focus from the user's active browser window.
+- X platform search now ranks candidates by practical usefulness signals and exposes `usefulness_score` / `usefulness_signals` in item metrics.
 
 ### Fixed
 
 - X status posts that only contain a short link to an X Article no longer return the short link as usable article text. If the article body is not available from public logged-out data, `read_url` now returns `success=false` with `x_article_body_not_extracted`.
 - X Article logged-out shells are rejected as unreadable content instead of being cleaned into a false positive article body.
 - `read_url(save=true)` can save successful cached reads without mixing request-specific storage fields into the reader cache.
+- Raw browser and user-session browser reads work under MCP hosts that already own an asyncio loop by running sync Playwright operations in a browser worker thread.
+- X platform search results are scored as short social evidence instead of being failed by long-article length thresholds.
 
 ## 0.3.0 - 2026-06-20
 

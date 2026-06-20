@@ -47,7 +47,7 @@ class XSearchReader:
             candidates.extend(_extract_search_candidates(response.text, base_url=response.final_url))
             if len(candidates) >= request.max_results:
                 break
-        candidates = _dedupe_candidates(candidates)
+        candidates = _rank_candidates(request.query, _dedupe_candidates(candidates))
         if not candidates:
             return _failure(request, trace, "platform_search_no_results", "No X search results found.")
 
@@ -67,13 +67,19 @@ class XSearchReader:
                         published_at_raw = extracted.published_at_raw
                 except Exception:
                     pass
+            relevance = _relevance(request.query, text)
+            usefulness_score, usefulness_signals = _usefulness(request.query, text)
             items.append(
                 build_platform_evidence_item(
                     url=candidate.url,
                     text=text,
                     author=author,
                     published_at_raw=published_at_raw,
-                    relevance=_relevance(request.query, text),
+                    relevance=relevance,
+                    metrics={
+                        "usefulness_score": usefulness_score,
+                        "usefulness_signals": usefulness_signals,
+                    },
                 )
             )
 
@@ -182,6 +188,14 @@ def _extract_search_candidates(document: str, *, base_url: str) -> list[_SearchC
     return _dedupe_candidates(parser.candidates)
 
 
+def _rank_candidates(query: str, candidates: list[_SearchCandidate]) -> list[_SearchCandidate]:
+    return sorted(
+        candidates,
+        key=lambda candidate: _usefulness(query, candidate.text)[0],
+        reverse=True,
+    )
+
+
 def _extract_author(text: str) -> str | None:
     match = re.search(r"@([A-Za-z0-9_]{1,15})\b", text)
     return f"@{match.group(1)}" if match else None
@@ -203,6 +217,70 @@ def _relevance(query: str, text: str) -> float:
         return 0.0
     hits = sum(1 for term in terms if term in lowered)
     return round(hits / len(terms), 3)
+
+
+def _usefulness(query: str, text: str) -> tuple[float, list[str]]:
+    lowered = text.lower()
+    relevance = _relevance(query, text)
+    signals: list[str] = []
+    score = relevance * 0.35
+    text_length = len(text.strip())
+
+    if text_length >= 280:
+        score += 0.18
+        signals.append("substantive_length")
+    elif text_length >= 120:
+        score += 0.1
+        signals.append("some_context")
+    elif text_length < 80:
+        score -= 0.18
+        signals.append("very_short")
+
+    signal_groups = {
+        "definition": r"\b(is|means|refers to|about|definition|defined)\b|下一|是指",
+        "methodology": r"\b(method|roadmap|framework|checklist|steps?|patterns?|system)\b",
+        "implementation": r"\b(build|implement|run|state file|automation|workflow|agent)\b",
+        "verifier": r"\b(verifier|verify|test|lint|gate|check|eval)\b",
+        "budget": r"\b(token|cost|budget|affordable|pricing|spend)\b",
+        "critique": r"\b(why|risk|problem|hype|instead of|concern|tradeoff)\b",
+        "article": r"\b(article|longform|read|thread)\b|文章",
+    }
+    weights = {
+        "definition": 0.14,
+        "methodology": 0.14,
+        "implementation": 0.12,
+        "verifier": 0.12,
+        "budget": 0.1,
+        "critique": 0.08,
+        "article": 0.08,
+    }
+    for name, pattern in signal_groups.items():
+        if re.search(pattern, lowered):
+            score += weights[name]
+            signals.append(name)
+
+    if _looks_link_only(text):
+        score -= 0.22
+        signals.append("link_only")
+    if _looks_echo_only(query, text):
+        score -= 0.24
+        signals.append("echo_only")
+
+    return round(max(0.0, min(score, 1.0)), 3), signals
+
+
+def _looks_link_only(text: str) -> bool:
+    words = re.findall(r"[A-Za-z0-9_]+", text)
+    return "http" in text.lower() and len(words) <= 8
+
+
+def _looks_echo_only(query: str, text: str) -> bool:
+    normalized_query = " ".join(re.findall(r"[A-Za-z0-9]+", query.lower()))
+    normalized_text = " ".join(re.findall(r"[A-Za-z0-9]+", text.lower()))
+    if not normalized_query or normalized_query not in normalized_text:
+        return False
+    extra = normalized_text.replace(normalized_query, " ").strip()
+    return len(extra.split()) <= 5
 
 
 def _failure(

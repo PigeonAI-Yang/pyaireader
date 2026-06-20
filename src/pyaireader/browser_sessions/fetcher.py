@@ -10,7 +10,7 @@ from pyaireader.browser_sessions.base import (
     BrowserSessionNotAvailable,
     BrowserSessionProvider,
 )
-from pyaireader.browser_sessions.cdp_provider import CDPBrowserSessionProvider
+from pyaireader.browser_sessions.cdp_provider import CDPBrowserSessionProvider, discover_cdp_endpoint
 from pyaireader.browser_sessions.persistent_profile_provider import (
     PersistentProfileBrowserSessionProvider,
 )
@@ -30,7 +30,12 @@ class BrowserSessionFetcher:
     ) -> None:
         self.timeout_ms = timeout_ms
         self.provider_mode = _normalize_provider_mode(provider_mode)
-        self.cdp_endpoint = cdp_endpoint or os.getenv("PYAIREADER_BROWSER_CDP")
+        configured_cdp_endpoint = cdp_endpoint or os.getenv("PYAIREADER_BROWSER_CDP")
+        self.cdp_endpoint = (
+            discover_cdp_endpoint(configured_cdp_endpoint)
+            if self.provider_mode in {"auto", "cdp"}
+            else configured_cdp_endpoint
+        )
         self.profile_dir = Path(
             profile_dir or os.getenv("PYAIREADER_BROWSER_PROFILE_DIR", _default_profile_dir())
         )
@@ -122,9 +127,11 @@ def _default_providers(
     profile_dir: Path,
 ) -> list[BrowserSessionProvider]:
     providers: list[BrowserSessionProvider] = []
-    if provider_mode == "cdp" or (provider_mode == "auto" and cdp_endpoint):
+    if provider_mode in {"auto", "cdp"} and not cdp_endpoint:
+        cdp_endpoint = discover_cdp_endpoint()
+    if provider_mode in {"auto", "cdp"}:
         providers.append(CDPBrowserSessionProvider(cdp_endpoint))
-    if provider_mode in {"auto", "persistent_profile"}:
+    if provider_mode == "persistent_profile":
         providers.append(PersistentProfileBrowserSessionProvider(profile_dir))
     return providers
 
@@ -148,11 +155,14 @@ def _status_note(
     if active_provider == "cdp":
         return "connected_to_user_started_cdp_browser"
     if active_provider == "persistent_profile":
-        if provider_mode == "auto" and not cdp_endpoint:
-            return "using_pyaireader_persistent_profile; not_connected_to_already_open_edge"
         return "using_pyaireader_persistent_profile"
     if provider_mode == "cdp":
         return "cdp_requested_but_not_available"
+    if provider_mode == "auto":
+        return (
+            "no_user_started_cdp_browser_available; start Edge/Chrome with remote debugging "
+            "or explicitly choose persistent_profile"
+        )
     return "no_browser_session_provider_available"
 
 

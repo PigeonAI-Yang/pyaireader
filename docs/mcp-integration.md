@@ -138,9 +138,9 @@ User session providers:
 PYAIREADER_BROWSER_PROVIDER=auto | cdp | persistent_profile
 ```
 
-- `auto`: default. Use `PYAIREADER_BROWSER_CDP` when it is configured and reachable; otherwise use pyaireader's persistent profile.
-- `cdp`: only use the user-started Edge/Chrome CDP endpoint. If it is not reachable, fail instead of falling back.
-- `persistent_profile`: only use pyaireader's managed browser profile.
+- `auto`: default. Discover `PYAIREADER_BROWSER_CDP`, `127.0.0.1:9222`, and `127.0.0.1:9333`, then connect only to a user-started Edge/Chrome CDP browser. If none is reachable, fail explicitly instead of opening a managed profile.
+- `cdp`: only use the user-started Edge/Chrome CDP endpoint. If it is not reachable, fail instead of falling back. CDP reads use background targets by default, so platform search/detail reads do not repeatedly steal focus from the user's active browser window.
+- `persistent_profile`: only use pyaireader's managed browser profile. This provider is opened only when explicitly selected.
 
 Useful checks:
 
@@ -157,7 +157,13 @@ $env:PYAIREADER_BROWSER_PROVIDER="cdp"
 $env:PYAIREADER_BROWSER_CDP="http://127.0.0.1:9222"
 ```
 
-An already-open normal Edge window usually cannot be retrofitted into CDP mode. Use `browser-status` to verify the actual provider before reading X content.
+An already-open normal Edge window usually cannot be retrofitted into CDP mode. Use `browser-status` to verify the actual provider before reading X content. If CDP is unavailable, close the normal Edge process and launch Edge through `edge-cdp-launch`, or explicitly choose `persistent_profile`.
+
+For debugging only, background target creation can be disabled:
+
+```powershell
+$env:PYAIREADER_CDP_BACKGROUND_TARGET="0"
+```
 
 The browser session layer does not read browser cookie databases. It only performs read-side actions: open a URL, wait for content, search a user-requested query, extract text/html, and open bounded result URLs. It does not like, repost, comment, follow, send DMs, purchase, trade, or change account settings.
 

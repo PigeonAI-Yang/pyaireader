@@ -12,14 +12,22 @@ from pyaireader.browser_sessions.base import (
     BrowserReadOptions,
     BrowserSessionNotAvailable,
 )
+from pyaireader.browser_runtime import run_sync_browser_operation
 from pyaireader.reader.safety import assert_url_safe
+
+DEFAULT_CDP_ENDPOINTS = ("http://127.0.0.1:9222", "http://127.0.0.1:9333")
 
 
 class CDPBrowserSessionProvider:
     name = "cdp"
 
-    def __init__(self, endpoint: str | None = None) -> None:
+    def __init__(self, endpoint: str | None = None, *, background_pages: bool | None = None) -> None:
         self.endpoint = endpoint or os.getenv("PYAIREADER_BROWSER_CDP")
+        self.background_pages = (
+            _env_bool("PYAIREADER_CDP_BACKGROUND_TARGET", default=True)
+            if background_pages is None
+            else background_pages
+        )
 
     def is_available(self) -> bool:
         status = self.status()
@@ -30,19 +38,26 @@ class CDPBrowserSessionProvider:
             raise BrowserSessionNotAvailable("cdp_browser_session_not_available")
         safe_url = assert_url_safe(url).url
         try:
+            return run_sync_browser_operation(lambda: self._open_page_sync(safe_url, options))
+        except Exception as exc:
+            raise BrowserSessionNotAvailable(f"cdp_browser_session_failed: {exc}") from exc
+
+    def _open_page_sync(self, safe_url: str, options: BrowserReadOptions) -> BrowserPageSnapshot:
+        try:
             from playwright.sync_api import sync_playwright
 
             with sync_playwright() as playwright:
                 browser = playwright.chromium.connect_over_cdp(self.endpoint)
                 context = browser.contexts[0] if browser.contexts else browser.new_context()
-                page = context.new_page()
-                page.goto(safe_url, wait_until="domcontentloaded", timeout=options.timeout_ms)
-                _wait_for_page(page, options)
-                snapshot = _snapshot(page, safe_url, self.name)
-                page.close()
-                return snapshot
+                page = _open_cdp_page(browser, context, background_pages=self.background_pages)
+                try:
+                    page.goto(safe_url, wait_until="domcontentloaded", timeout=options.timeout_ms)
+                    _wait_for_page(page, options)
+                    return _snapshot(page, safe_url, self.name)
+                finally:
+                    page.close()
         except Exception as exc:
-            raise BrowserSessionNotAvailable(f"cdp_browser_session_failed: {exc}") from exc
+            raise BrowserSessionNotAvailable(str(exc)) from exc
 
     def status(self) -> BrowserProviderStatus:
         playwright_installed = importlib.util.find_spec("playwright") is not None
@@ -55,8 +70,27 @@ class CDPBrowserSessionProvider:
                 "endpoint": endpoint,
                 "playwright_installed": playwright_installed,
                 "endpoint_reachable": reachable,
+                "background_pages": self.background_pages,
             },
         )
+
+
+def _open_cdp_page(browser, context, *, background_pages: bool):  # noqa: ANN001
+    if not background_pages:
+        return context.new_page()
+    try:
+        browser_session = browser.new_browser_cdp_session()
+        with context.expect_page() as page_info:
+            browser_session.send(
+                "Target.createTarget",
+                {
+                    "url": "about:blank",
+                    "background": True,
+                },
+            )
+        return page_info.value
+    except Exception as exc:
+        raise BrowserSessionNotAvailable(f"cdp_background_target_failed: {exc}") from exc
 
 
 def _wait_for_page(page, options: BrowserReadOptions) -> None:  # noqa: ANN001
@@ -105,3 +139,22 @@ def _endpoint_reachable(endpoint: str | None) -> bool:
             return True
     except Exception:
         return False
+
+
+def discover_cdp_endpoint(preferred_endpoint: str | None = None) -> str | None:
+    candidates = [preferred_endpoint, os.getenv("PYAIREADER_BROWSER_CDP"), *DEFAULT_CDP_ENDPOINTS]
+    seen: set[str] = set()
+    for endpoint in candidates:
+        if not endpoint or endpoint in seen:
+            continue
+        seen.add(endpoint)
+        if _endpoint_reachable(endpoint):
+            return endpoint
+    return None
+
+
+def _env_bool(name: str, *, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() not in {"0", "false", "no", "off"}

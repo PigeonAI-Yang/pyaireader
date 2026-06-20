@@ -121,6 +121,34 @@ X_SEARCH_HTML = """
 </html>
 """
 
+X_SEARCH_SIGNAL_HTML = """
+<!doctype html>
+<html>
+  <body>
+    <main>
+      <article>
+        <div>@echo_user</div>
+        <time>1m</time>
+        <div>Loop engineering https://t.co/example</div>
+        <a href="/echo_user/status/2001">Open</a>
+      </article>
+      <article>
+        <div>@method_user</div>
+        <time>2m</time>
+        <div>Prompt engineering was about what you say. Context engineering was about what you feed. Loop engineering is the system that runs the agent with gates, state, verifier checks, and budget limits.</div>
+        <a href="/method_user/status/2002">Open</a>
+      </article>
+      <article>
+        <div>@budget_user</div>
+        <time>3m</time>
+        <div>Loop engineering only works if token budget, automated tests, and stop conditions are designed before the automation runs.</div>
+        <a href="/budget_user/status/2003">Open</a>
+      </article>
+    </main>
+  </body>
+</html>
+"""
+
 X_STATUS_DETAIL_HTML = """
 <!doctype html>
 <html>
@@ -493,6 +521,8 @@ def test_x_search_user_session_collects_bounded_results(tmp_path: Path) -> None:
     assert len(result.items) == 1
     assert result.items[0].url == "https://x.com/analyst_one/status/1001"
     assert "AAOI detailed note" in result.items[0].text
+    assert result.items[0].quality is not None
+    assert result.items[0].quality.level != "failed"
     assert result.trace is not None
     assert result.trace.user_session_used is True
     assert result.trace.browser_provider == "fake_browser"
@@ -500,6 +530,57 @@ def test_x_search_user_session_collects_bounded_results(tmp_path: Path) -> None:
     assert result.visited_urls == result.trace.visited_urls
     assert len([call for call in browser.calls if call[1] == "x_search"]) == 1
     assert len([call for call in browser.calls if call[1] == "x_search_result"]) == 1
+
+
+def test_x_search_short_results_are_usable_social_evidence(tmp_path: Path) -> None:
+    fetcher = MappingFetcher()
+    browser = FakeBrowserSessionFetcher({"x_search": X_SEARCH_HTML})
+    pipeline = make_pipeline(tmp_path, fetcher, browser_session_fetcher=browser)
+
+    result = pipeline.search_platform(
+        PlatformSearchRequest(
+            platform="x",
+            query="AAOI",
+            auth_strategy="user_session_only",
+            max_results=1,
+            follow_links="none",
+        )
+    )
+
+    assert result.success is True
+    assert len(result.items) == 1
+    assert result.items[0].quality is not None
+    assert result.items[0].quality.level == "usable"
+    assert result.items[0].evidence
+    assert "AAOI demand checks" in result.items[0].text
+    assert [call[1] for call in browser.calls] == ["x_search"]
+
+
+def test_x_search_ranks_methodology_signals_over_echo_posts(tmp_path: Path) -> None:
+    fetcher = MappingFetcher()
+    browser = FakeBrowserSessionFetcher({"x_search": X_SEARCH_SIGNAL_HTML})
+    pipeline = make_pipeline(tmp_path, fetcher, browser_session_fetcher=browser)
+
+    result = pipeline.search_platform(
+        PlatformSearchRequest(
+            platform="x",
+            query="loop engineering",
+            auth_strategy="user_session_only",
+            max_results=2,
+            follow_links="none",
+        )
+    )
+
+    assert result.success is True
+    assert len(result.items) == 2
+    assert result.items[0].url == "https://x.com/method_user/status/2002"
+    assert result.items[0].metrics["usefulness_score"] > result.items[1].metrics[
+        "usefulness_score"
+    ]
+    assert "definition" in result.items[0].metrics["usefulness_signals"]
+    assert "verifier" in result.items[0].metrics["usefulness_signals"]
+    assert result.items[1].url == "https://x.com/budget_user/status/2003"
+    assert all(item.url != "https://x.com/echo_user/status/2001" for item in result.items)
 
 
 def test_x_search_anonymous_does_not_use_user_session(tmp_path: Path) -> None:

@@ -11,6 +11,7 @@ from pyaireader.browser_sessions.base import (
     BrowserReadOptions,
     BrowserSessionNotAvailable,
 )
+from pyaireader.browser_runtime import run_sync_browser_operation
 from pyaireader.reader.safety import assert_url_safe
 
 
@@ -42,6 +43,14 @@ class PersistentProfileBrowserSessionProvider:
         safe_url = assert_url_safe(url).url
         self.profile_dir.mkdir(parents=True, exist_ok=True)
         try:
+            return run_sync_browser_operation(lambda: self._open_page_sync(safe_url, options))
+        except Exception as exc:
+            raise BrowserSessionNotAvailable(
+                f"persistent_profile_browser_session_failed: {exc}"
+            ) from exc
+
+    def _open_page_sync(self, safe_url: str, options: BrowserReadOptions) -> BrowserPageSnapshot:
+        try:
             from playwright.sync_api import sync_playwright
 
             with sync_playwright() as playwright:
@@ -56,9 +65,7 @@ class PersistentProfileBrowserSessionProvider:
                 context.close()
                 return snapshot
         except Exception as exc:
-            raise BrowserSessionNotAvailable(
-                f"persistent_profile_browser_session_failed: {exc}"
-            ) from exc
+            raise BrowserSessionNotAvailable(str(exc)) from exc
 
     def open_interactive_login(self, url: str) -> None:
         if not self.is_available():

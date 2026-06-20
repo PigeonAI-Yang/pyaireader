@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from pyaireader.models import EvidenceSnippet, PlatformEvidenceItem
 from pyaireader.processors import pick_evidence, split_paragraphs
 from pyaireader.quality import score_quality
@@ -12,6 +14,7 @@ def build_platform_evidence_item(
     author: str | None = None,
     published_at_raw: str | None = None,
     relevance: float = 0.0,
+    metrics: dict[str, Any] | None = None,
 ) -> PlatformEvidenceItem:
     paragraphs = split_paragraphs(text)
     evidence = pick_evidence(
@@ -27,7 +30,7 @@ def build_platform_evidence_item(
         author=author,
         published_at_raw=published_at_raw,
         text=text,
-        metrics={},
+        metrics=metrics or {},
         relevance=relevance,
         quality=quality,
         evidence=evidence or [_fallback_evidence(url, text)],

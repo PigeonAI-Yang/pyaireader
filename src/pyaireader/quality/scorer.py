@@ -16,7 +16,7 @@ def score_quality(
     extractor: str | None = None,
 ) -> ReaderQuality:
     detected = detect_problem_flags(html, clean_text)
-    social_primary_success = extractor == "x_status" and len(clean_text.strip()) >= 40
+    social_primary_success = extractor in {"x_status", "x_search"} and len(clean_text.strip()) >= 40
     if social_primary_success and detected.get("login_required"):
         detected["login_required"] = False
         detected["page_has_login_chrome"] = True

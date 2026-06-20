@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import time
 
+from pyaireader.browser_runtime import run_sync_browser_operation
 from pyaireader.errors import FetchError
 from pyaireader.fetchers.http_fetcher import FetchResponse
 from pyaireader.reader.safety import assert_url_safe
@@ -24,6 +25,12 @@ class PlaywrightFetcher:
         safe_url = assert_url_safe(url).url
         start = time.perf_counter()
         try:
+            return run_sync_browser_operation(lambda: self._fetch_sync(safe_url, start))
+        except Exception as exc:
+            raise FetchError(f"raw browser fetch failed: {exc}") from exc
+
+    def _fetch_sync(self, safe_url: str, start: float) -> FetchResponse:
+        try:
             from playwright.sync_api import sync_playwright
 
             with sync_playwright() as playwright:
@@ -39,7 +46,7 @@ class PlaywrightFetcher:
                 headers = response.headers if response else {}
                 browser.close()
         except Exception as exc:
-            raise FetchError(f"raw browser fetch failed: {exc}") from exc
+            raise FetchError(str(exc)) from exc
 
         raw = html.encode("utf-8", errors="ignore")
         elapsed_ms = int((time.perf_counter() - start) * 1000)

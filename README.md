@@ -176,11 +176,17 @@ user_session_only
 PYAIREADER_BROWSER_PROVIDER=auto | cdp | persistent_profile
 ```
 
-- `auto`：默认。配置了 `PYAIREADER_BROWSER_CDP` 且端口可连时，优先连接用户启动的 Edge/Chrome CDP；否则使用 `pyaireader` 管理的 persistent browser profile。
-- `cdp`：只连接用户启动的 CDP 浏览器。接不上就失败，不会偷偷 fallback 到独立 profile。
-- `persistent_profile`：只使用 `pyaireader` 管理的独立浏览器 profile。第一次需要用户自己在这个 profile 里登录 X。
+- `auto`：默认。自动探测 `PYAIREADER_BROWSER_CDP`、`127.0.0.1:9222`、`127.0.0.1:9333`，只连接用户已经启动的 Edge/Chrome CDP。找不到就明确失败，不会偷偷打开独立 profile。
+- `cdp`：只连接用户启动的 CDP 浏览器。接不上就失败，不会偷偷 fallback 到独立 profile。默认用 CDP background target 读页面，避免反复抢用户当前窗口的前台焦点。
+- `persistent_profile`：只使用 `pyaireader` 管理的独立浏览器 profile。只有显式选择这个 provider 时才会打开。第一次需要用户自己在这个 profile 里登录 X。
 
 它不会直接读取浏览器 cookie 数据库。浏览器会话只执行打开页面、等待、搜索、提取正文、打开有限结果链接这些只读动作。
+
+如果需要调试 CDP 页面创建行为，可以临时关闭后台 target：
+
+```powershell
+$env:PYAIREADER_CDP_BACKGROUND_TARGET='0'
+```
 
 查看当前到底会用哪个浏览器会话：
 
@@ -194,13 +200,13 @@ uv run pyaireader browser-status --pretty
 uv run pyaireader browser-login x --provider persistent_profile --pretty
 ```
 
-如果要复用你自己启动的 Edge/Chrome，需要先用 CDP 模式启动浏览器，再配置：
+如果 `browser-status` 没有连上 CDP，可以让 `pyaireader` 帮你用 CDP 模式启动 Edge：
 
 ```powershell
 uv run pyaireader edge-cdp-launch --pretty
 ```
 
-命令成功后会返回建议设置：
+命令成功后会返回建议设置。也可以不设置 `PYAIREADER_BROWSER_CDP`，`auto` 会扫描常见本机端口：
 
 ```powershell
 $env:PYAIREADER_BROWSER_PROVIDER='cdp'
@@ -208,7 +214,7 @@ $env:PYAIREADER_BROWSER_CDP='http://127.0.0.1:9222'
 uv run pyaireader browser-status --pretty
 ```
 
-已经用普通方式打开的 Edge，后面再补 `--remote-debugging-port` 通常接不上。要么先关闭 Edge 再用 CDP 模式启动，要么使用 `persistent_profile`。
+已经用普通方式打开的 Edge，后面再补 `--remote-debugging-port` 通常接不上。要复用登录态，先用 `browser-status` 确认是否已经连到 CDP；没连上就关闭普通 Edge，再用 `edge-cdp-launch` 启动，或者显式选择 `persistent_profile`。
 
 ## 保存资料：cache 和 library 不一样
 
