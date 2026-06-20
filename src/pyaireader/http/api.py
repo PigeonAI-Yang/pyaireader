@@ -6,10 +6,12 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
+from pyaireader.browser_sessions import BrowserSessionFetcher
 from pyaireader.models import (
-    HEALTH_SCHEMA_VERSION,
-    ReaderErrorPayload,
     BatchReadUrlsRequest,
+    HEALTH_SCHEMA_VERSION,
+    PlatformSearchRequest,
+    ReaderErrorPayload,
     InspectUrlRequest,
     ReadUrlRequest,
 )
@@ -22,17 +24,52 @@ def handle_api_request(path: str, payload: dict[str, Any], pipeline: ReaderPipel
             "schema_version": HEALTH_SCHEMA_VERSION,
             "success": True,
             "service": "pyaireader",
+            "auth_strategies": ["anonymous", "user_session_fallback", "user_session_only"],
+            "browser_session": BrowserSessionFetcher().status(),
         }
+    if path == "/v1/browser-status":
+        return HTTPStatus.OK, BrowserSessionFetcher().status()
     if path == "/v1/read":
         return HTTPStatus.OK, pipeline.read(ReadUrlRequest(**payload)).to_dict()
     if path == "/v1/batch-read":
         return HTTPStatus.OK, pipeline.batch_read(BatchReadUrlsRequest(**payload))
     if path == "/v1/inspect":
         return HTTPStatus.OK, pipeline.inspect(InspectUrlRequest(**payload))
+    if path in {"/v1/search-platform", "/v1/collect-platform-evidence"}:
+        return HTTPStatus.OK, pipeline.search_platform(PlatformSearchRequest(**payload)).to_dict()
     if path == "/v1/cache/clear":
         return HTTPStatus.OK, pipeline.clear_cache(
             url=payload.get("url"),
             domain=payload.get("domain"),
+        )
+    if path == "/v1/storage-status":
+        return HTTPStatus.OK, pipeline.storage_status()
+    if path == "/v1/library/list":
+        return HTTPStatus.OK, pipeline.library_list(
+            store=payload.get("store", "default"),
+            limit=int(payload.get("limit", 20)),
+            offset=int(payload.get("offset", 0)),
+            project=payload.get("project"),
+            include_text=bool(payload.get("include_text", False)),
+        )
+    if path == "/v1/library/get":
+        return HTTPStatus.OK, pipeline.library_get(
+            str(payload.get("item_id", "")),
+            store=payload.get("store", "default"),
+        )
+    if path == "/v1/library/search":
+        return HTTPStatus.OK, pipeline.library_search(
+            str(payload.get("query", "")),
+            store=payload.get("store", "default"),
+            limit=int(payload.get("limit", 20)),
+            project=payload.get("project"),
+            include_text=bool(payload.get("include_text", False)),
+        )
+    if path == "/v1/library/save":
+        item = payload.get("item", payload)
+        return HTTPStatus.OK, pipeline.save_reading_item(
+            item,
+            store=payload.get("store", "default"),
         )
     return HTTPStatus.NOT_FOUND, {
         "success": False,
@@ -58,6 +95,12 @@ def make_handler(pipeline: ReaderPipeline):
                         "schema_version": HEALTH_SCHEMA_VERSION,
                         "success": True,
                         "service": "pyaireader",
+                        "auth_strategies": [
+                            "anonymous",
+                            "user_session_fallback",
+                            "user_session_only",
+                        ],
+                        "browser_session": BrowserSessionFetcher().status(),
                     },
                 )
                 return

@@ -31,8 +31,16 @@ def test_mcp_server_registers_expected_tools() -> None:
         "read_url_for_ai",
         "batch_read_urls",
         "batch_read_urls_for_ai",
+        "browser_status",
+        "search_platform",
+        "collect_platform_evidence",
         "inspect_url",
         "clear_reader_cache",
+        "storage_status",
+        "save_reading_item",
+        "library_list",
+        "library_get",
+        "library_search",
     }
 
 
@@ -53,12 +61,22 @@ def test_mcp_tools_expose_output_schema_and_annotations() -> None:
     assert payloads["batch_read_urls"]["outputSchema"] == payloads["batch_read_urls_for_ai"][
         "outputSchema"
     ]
+    assert payloads["search_platform"]["outputSchema"] == payloads["collect_platform_evidence"][
+        "outputSchema"
+    ]
     assert payloads["reader_health"]["annotations"]["readOnlyHint"] is True
     assert payloads["reader_health"]["annotations"]["idempotentHint"] is True
+    assert payloads["browser_status"]["annotations"]["readOnlyHint"] is True
+    assert payloads["browser_status"]["annotations"]["idempotentHint"] is True
+    assert payloads["browser_status"]["annotations"]["openWorldHint"] is False
     assert payloads["read_url"]["annotations"]["openWorldHint"] is True
     assert payloads["read_url"]["annotations"]["destructiveHint"] is False
     assert payloads["clear_reader_cache"]["annotations"]["readOnlyHint"] is False
     assert payloads["clear_reader_cache"]["annotations"]["destructiveHint"] is True
+    assert payloads["storage_status"]["annotations"]["readOnlyHint"] is True
+    assert payloads["save_reading_item"]["annotations"]["readOnlyHint"] is False
+    assert payloads["save_reading_item"]["annotations"]["destructiveHint"] is False
+    assert payloads["library_get"]["annotations"]["openWorldHint"] is False
 
 
 def test_mcp_tool_descriptions_point_agents_to_reader_use_case() -> None:
@@ -96,10 +114,25 @@ def test_reader_health_returns_schema_defaults_and_safety() -> None:
     assert "read_url_for_ai" in payload["tools"]
     assert "batch_read_urls" in payload["tools"]
     assert "batch_read_urls_for_ai" in payload["tools"]
+    assert "browser_status" in payload["tools"]
+    assert "search_platform" in payload["tools"]
+    assert "collect_platform_evidence" in payload["tools"]
+    assert "storage_status" in payload["tools"]
+    assert "library_get" in payload["tools"]
     assert payload["default_parameters"]["fetch_strategy"] == "auto"
+    assert payload["default_parameters"]["auth_strategy"] == "user_session_fallback"
+    assert payload["default_parameters"]["save"] is False
+    assert payload["default_parameters"]["save_to"] == "default"
+    assert payload["auth_strategies"] == [
+        "anonymous",
+        "user_session_fallback",
+        "user_session_only",
+    ]
     assert payload["schemas"]["read_result"] == READ_RESULT_SCHEMA_VERSION
+    assert payload["schemas"]["reading_item"] == "pyaireader.reading_item.v1"
     assert payload["safety"]["public_http_https_only"] is True
     assert payload["safety"]["content_is_untrusted_evidence"] is True
+    assert payload["browser_session"]["provider_mode"] == "auto"
 
 
 def test_reader_health_reports_streamable_http_transport() -> None:
@@ -155,6 +188,32 @@ def test_read_url_returns_structured_content(monkeypatch: pytest.MonkeyPatch) ->
     assert structured_payload["success"] is True
 
 
+def test_read_url_accepts_storage_parameters(monkeypatch: pytest.MonkeyPatch) -> None:
+    import pyaireader.mcp.server as server
+
+    fake_pipeline = FakePipeline()
+    monkeypatch.setattr(server, "get_pipeline", lambda: fake_pipeline)
+    mcp = server._build_server()
+
+    payload = _call_tool_json(
+        mcp,
+        "read_url",
+        {
+            "url": "https://example.com",
+            "save": True,
+            "save_to": "default",
+            "project": "research",
+            "tags": ["ai", "news"],
+        },
+    )
+
+    assert payload["saved"] is True
+    assert payload["saved_item_id"] == "ri_test"
+    assert fake_pipeline.last_read_request.save is True
+    assert fake_pipeline.last_read_request.project == "research"
+    assert fake_pipeline.last_read_request.tags == ["ai", "news"]
+
+
 def test_batch_read_url_aliases_are_available(monkeypatch: pytest.MonkeyPatch) -> None:
     import pyaireader.mcp.server as server
 
@@ -170,6 +229,41 @@ def test_batch_read_url_aliases_are_available(monkeypatch: pytest.MonkeyPatch) -
     assert fake_pipeline.batch_calls == 2
 
 
+def test_platform_search_tools_are_available(monkeypatch: pytest.MonkeyPatch) -> None:
+    import pyaireader.mcp.server as server
+
+    fake_pipeline = FakePipeline()
+    monkeypatch.setattr(server, "get_pipeline", lambda: fake_pipeline)
+    mcp = server._build_server()
+
+    short = _call_tool_json(mcp, "search_platform", {"platform": "x", "query": "AAOI"})
+    long = _call_tool_json(mcp, "collect_platform_evidence", {"platform": "x", "query": "AAOI"})
+
+    assert short == long
+    assert short["success"] is True
+    assert short["platform"] == "x"
+    assert short["query"] == "AAOI"
+    assert fake_pipeline.search_calls == 2
+
+
+def test_storage_tools_are_available(monkeypatch: pytest.MonkeyPatch) -> None:
+    import pyaireader.mcp.server as server
+
+    fake_pipeline = FakePipeline()
+    monkeypatch.setattr(server, "get_pipeline", lambda: fake_pipeline)
+    mcp = server._build_server()
+
+    status = _call_tool_json(mcp, "storage_status", {})
+    listing = _call_tool_json(mcp, "library_list", {})
+    item = _call_tool_json(mcp, "library_get", {"item_id": "ri_test"})
+    search = _call_tool_json(mcp, "library_search", {"query": "AI"})
+
+    assert status["success"] is True
+    assert listing["items"][0]["id"] == "ri_test"
+    assert item["item"]["clean_text"] == "full text"
+    assert search["query"] == "AI"
+
+
 def test_mcp_server_validates_fetch_strategy() -> None:
     from pyaireader.mcp.server import _validate_fetch_strategy
 
@@ -182,15 +276,21 @@ class FakePipeline:
     def __init__(self) -> None:
         self.read_calls = 0
         self.batch_calls = 0
+        self.search_calls = 0
+        self.last_read_request = None
 
     def read(self, request):
         self.read_calls += 1
+        self.last_read_request = request
         return _Result(
             {
                 "schema_version": READ_RESULT_SCHEMA_VERSION,
                 "success": True,
                 "url": request.url,
                 "fetch_strategy": request.fetch_strategy,
+                "saved": request.save,
+                "saved_item_id": "ri_test" if request.save else None,
+                "saved_to": request.save_to if request.save else None,
             }
         )
 
@@ -212,8 +312,58 @@ class FakePipeline:
             "html_preview": "",
         }
 
+    def search_platform(self, request):
+        self.search_calls += 1
+        return _Result(
+            {
+                "success": True,
+                "platform": request.platform,
+                "query": request.query,
+                "items": [],
+                "visited_urls": [],
+            }
+        )
+
     def clear_cache(self, url=None, domain=None):
         return {"success": True, "deleted": 1, "url": url, "domain": domain}
+
+    def storage_status(self):
+        return {
+            "success": True,
+            "config_path": "stores.toml",
+            "loaded_from_file": False,
+            "default_store": "default",
+            "stores": [],
+            "reserved_drivers": [],
+        }
+
+    def save_reading_item(self, item, store="default"):
+        return {"success": True, "store": store, "item_id": item["id"], "created": True, "item": item}
+
+    def library_list(self, **kwargs):
+        return {
+            "success": True,
+            "store": kwargs.get("store", "default"),
+            "count": 1,
+            "items": [_reading_item_summary()],
+        }
+
+    def library_get(self, item_id, store="default"):
+        return {
+            "success": True,
+            "store": store,
+            "item_id": item_id,
+            "item": _reading_item(),
+        }
+
+    def library_search(self, query, **kwargs):
+        return {
+            "success": True,
+            "store": kwargs.get("store", "default"),
+            "query": query,
+            "count": 1,
+            "items": [_reading_item_summary()],
+        }
 
 
 class _Result:
@@ -222,6 +372,34 @@ class _Result:
 
     def to_dict(self):
         return self.payload
+
+
+def _reading_item() -> dict:
+    return {
+        "id": "ri_test",
+        "source_url": "https://example.com",
+        "final_url": "https://example.com",
+        "title": "AI",
+        "author": None,
+        "published_at_raw": None,
+        "clean_text": "full text",
+        "content_hash": "hash",
+        "quality": {},
+        "trace": {},
+        "metadata": {},
+        "tags": [],
+        "project": None,
+        "created_at": "2026-06-20T00:00:00+00:00",
+        "schema_version": "pyaireader.reading_item.v1",
+    }
+
+
+def _reading_item_summary() -> dict:
+    item = _reading_item()
+    item.pop("clean_text")
+    item["clean_text_length"] = 9
+    item["clean_text_preview"] = "full text"
+    return item
 
 
 def _call_tool_json(mcp, name: str, arguments: dict) -> dict:

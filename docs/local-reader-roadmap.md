@@ -5,32 +5,40 @@
 
 ## 目标：Local AI Reader
 
-`pyaireader` 的真实目标是做一个本机运行的 AI 网页阅读器：给 AI Agent 一个 URL，返回干净、紧凑、可诊断、可缓存、可追溯的网页内容。
+`pyaireader` 的真实目标是做一个本机运行的 AI 阅读与资料收集工具：用户给 AI Agent 一个 URL，或给出一个明确的平台搜索/资料收集任务，工具在本机读取、清洗、整理用户本来可以访问的网页内容。
 
 核心输入输出：
 
 ```text
-URL -> AI-readable content + metadata + quality + trace + cache state
+URL / user-scoped platform task -> AI-readable content + metadata + quality + trace + cache state
 ```
 
 它不是给人看的浏览器，也不是传统爬虫。它服务的是 Agent 的上下文输入：
 
 - Agent 拿到的是正文和证据，不是网页 UI。
-- 读取失败要明确失败，不能用搜索片段、标题缓存、登录页噪声假装读完。
+- 读取失败要明确失败，不能用搜索片段、标题缓存、登录页噪声、短链壳子假装读完。
 - 所有网页内容都必须被视为 untrusted evidence，而不是 instructions。
-- 本地运行，本地缓存，本地诊断，尽量少依赖远程 reader。
+- 本地运行，本地缓存，本地诊断，必要时使用用户授权的本机浏览器会话读取用户能看到的内容。
+- 平台搜索和资料收集必须被用户任务边界约束，不能无界扩散。
 
 ## 非目标
 
 这些能力不是 v0.x 的目标，避免产品边界变形：
 
-- 不是搜索引擎：不负责从关键词发现网页。
 - 不是全站爬虫：不做站点级 crawl、链接图谱、长期爬取任务。
-- 不是登录态抓取器：不读取账号登录后的私有内容。
-- 不是反爬突破工具：不承诺绕过验证码、付费墙、登录墙或访问控制。
-- 不是浏览器自动化平台：browser 只是最后兜底，不是默认读取方式。
+- 不是公共爬虫：不替远程用户、第三方系统或匿名批量任务采集内容。
+- 不是反访问控制工具：不承诺突破验证码、付费墙、账号权限或用户无权访问的内容。
+- 不是浏览器代操平台：默认只读，不静默点赞、转发、评论、关注、私信、购买、交易、修改账号设置。
 - 不是远程 SaaS reader：默认本机运行，HTTP API 也先服务本机调用。
 - 不是投研专用工具：投研是最严格的早期场景，但 reader 能力应保持通用。
+
+允许进入路线图的能力：
+
+- 用户给 URL，工具替用户读取和清洗页面。
+- 用户指定平台和关键词，工具在用户任务范围内搜索、打开结果、读取资料、生成 evidence。
+- 对 X 等需要登录态的平台，工具可以复用用户授权的本机浏览器会话读取用户本来能看到的内容。
+
+关键边界不是“只能打开一个 URL”，而是“必须在用户明确授权的任务范围内，只做读取、搜索、收集、整理，不产生外部账号后果”。
 
 ## Reader Capability Matrix
 
@@ -46,6 +54,8 @@ URL -> AI-readable content + metadata + quality + trace + cache state
 | Timeout control | 用户可控制读取等待时间 | 配置层已有 HTTP / browser timeout，工具参数不足 | 给 MCP / CLI 增加 `timeout_seconds` |
 | Token / character budget | 限制返回体规模，避免撑爆上下文 | 已有 `max_total_chars`、`max_clean_text_chars` | 增加 `token_budget` 语义，内部可继续按 chars 近似 |
 | Fetch strategy | 自动 / HTTP-only / browser-only 等策略 | 已有 `auto/http_only/scrapling_first/browser_first/browser_only` | 保持，但文档要强调默认不是 browser first |
+| User session reading | 使用用户授权的本机浏览器会话读取用户能看到的页面 | 暂无，X Article 匿名读不到时会明确失败 | 新增 `auth_strategy`，先支持 X Article 登录态读取 |
+| Platform search | 在用户指定平台按关键词搜索并收集资料 | 暂无 | 新增 `search_platform` / `collect_platform_evidence` 设计，先做 X |
 | Selector targeting | 只读页面某个区域 | 暂无 | 增加 `include_selector` / `exclude_selector`，先限 browser / parsed HTML |
 | Wait for page readiness | 等待页面关键元素出现或加载稳定 | browser fetcher 有基础等待，但工具参数不足 | 增加 `wait_for_selector`、`page_ready_timeout_seconds` |
 | Image handling | 图片是否保留、是否生成 alt | 暂无 | v0.2 只做 `include_images=false` 元数据占位；alt 生成放 v0.3+ |
@@ -53,7 +63,7 @@ URL -> AI-readable content + metadata + quality + trace + cache state
 | HTTP headers / user agent | 控制请求头和 UA | 目前偏内部默认 | 增加受限的 `user_agent_profile`，不要开放任意敏感 header |
 | Proxy / region | 指定代理或地区 | 暂无 | 不进 v0.2；先预留配置，不默认支持 |
 | Failure transparency | 读不到时明确原因 | 已有 `quality`、`trace.problem_flags` | 错误结构标准化：`error.code`、`retryable`、`suggested_next_action` |
-| No-login boundary | 不承诺读取登录后内容 | 文档已提到部分场景 | 写入 README / FAQ / tool docstring 的安全边界 |
+| User authorization boundary | 只在用户授权的本机任务范围内读取 | 当前只有匿名 URL 读取 | 写入 PRD/SPEC：允许用户会话读取，禁止静默账号互动 |
 
 ## pyaireader Extra
 
@@ -233,6 +243,17 @@ v0.2 要求：
 - `crawl_site`
 - `search_web`
 - `login_and_read`
+
+后续平台能力建议新增：
+
+- `search_platform`
+- `collect_platform_evidence`
+
+命名原则：
+
+- `search_web` 太泛，容易让工具变成通用搜索引擎。
+- `login_and_read` 语义错误，容易把用户授权本机会话说成越权访问。
+- `search_platform` 和 `collect_platform_evidence` 必须要求 `platform`、`query`、`max_results`、`time_range` 等任务边界。
 
 验收：
 

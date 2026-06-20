@@ -1,5 +1,43 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Platform adapter layer for site-specific readers, starting with X status and X Article URLs.
+- `auth_strategy` support across CLI, MCP, HTTP API, and reader models:
+  `anonymous`, `user_session_fallback`, and `user_session_only`.
+- User-authorized local browser session layer with CDP and pyaireader-managed persistent profile providers.
+- Explicit browser provider selection through `PYAIREADER_BROWSER_PROVIDER=auto/cdp/persistent_profile`.
+- `pyaireader browser-status` and MCP/HTTP browser session status reporting, so users can see whether reads use CDP or pyaireader's persistent profile.
+- `pyaireader browser-login x --provider persistent_profile` for logging in to the managed browser profile.
+- `pyaireader edge-cdp-launch` helper for launching Edge with a CDP port and printing the required pyaireader environment variables.
+- X Article and X status user-session fallback when logged-out public content does not expose the readable body.
+- X platform search/evidence collection through CLI, HTTP API, and MCP tools:
+  `search_platform` and `collect_platform_evidence`.
+- Trace fields for auth/session diagnostics: `auth_strategy`, `user_session_used`,
+  `browser_provider`, `visited_urls`, and `user_task_scope`.
+- Storage adapter layer that separates reading from saving user material.
+- Stable `ReadingItem` schema: `pyaireader.reading_item.v1`.
+- Default local SQLite library at `~/.pyaireader/library.sqlite3`.
+- Filesystem storage backend that writes machine-readable JSON and optional Markdown.
+- `~/.pyaireader/stores.toml` configuration for named stores.
+- CLI library commands: `storage-status`, `library list`, `library get`, `library search`, and `library export`.
+- MCP storage tools: `storage_status`, `save_reading_item`, `library_list`, `library_get`, and `library_search`.
+- HTTP storage endpoints: `/v1/storage-status`, `/v1/library/list`, `/v1/library/get`, `/v1/library/search`, and `/v1/library/save`.
+
+### Changed
+
+- Documented the boundary between reader cache and library/storage: cache is a temporary acceleration layer, while library/storage is the user material layer.
+- Updated `read_url` MCP annotations to reflect that the tool can write to local storage when called with `save=true`.
+- Kept SQLite as the default local store while documenting filesystem stores and future adapter directions instead of tying pyaireader to one project database.
+
+### Fixed
+
+- X status posts that only contain a short link to an X Article no longer return the short link as usable article text. If the article body is not available from public logged-out data, `read_url` now returns `success=false` with `x_article_body_not_extracted`.
+- X Article logged-out shells are rejected as unreadable content instead of being cleaned into a false positive article body.
+- `read_url(save=true)` can save successful cached reads without mixing request-specific storage fields into the reader cache.
+
 ## 0.3.0 - 2026-06-20
 
 ### Added

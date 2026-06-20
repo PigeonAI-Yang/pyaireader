@@ -68,7 +68,7 @@ class TextExtractor:
     def _try_social(self, document: str, url: str | None) -> ExtractedText | None:
         if not _is_x_status_url(url):
             return None
-        return _extract_x_status(document, url)
+        return extract_x_status(document, url)
 
 
 def _is_x_status_url(url: str | None) -> bool:
@@ -79,7 +79,7 @@ def _is_x_status_url(url: str | None) -> bool:
     return host in {"x.com", "www.x.com", "twitter.com", "www.twitter.com"} and "/status/" in parsed.path
 
 
-def _extract_x_status(document: str, url: str | None) -> ExtractedText | None:
+def extract_x_status(document: str, url: str | None) -> ExtractedText | None:
     parsed = _SocialHTMLParser()
     parsed.feed(document)
     title = normalize_text(parsed.title or "") or None

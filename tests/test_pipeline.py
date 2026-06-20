@@ -51,6 +51,30 @@ class FakeFetcher:
         )
 
 
+class FakeBrowserSessionFetcher:
+    name = "authenticated_browser"
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def fetch(self, url: str, *, task_scope: str | None = None) -> FetchResponse:
+        self.calls += 1
+        return FetchResponse(
+            url=url,
+            final_url=url,
+            status_code=200,
+            content_type="text/html; charset=utf-8",
+            text=HTML,
+            raw=HTML.encode("utf-8"),
+            elapsed_ms=1,
+            headers={
+                "x-pyaireader-engine": self.name,
+                "x-pyaireader-browser-provider": "cdp",
+                "x-pyaireader-task-scope": task_scope or "",
+            },
+        )
+
+
 def make_pipeline(tmp_path: Path, fetcher: FakeFetcher) -> ReaderPipeline:
     config = ReaderConfig(cache_path=tmp_path / "cache.sqlite3")
     return ReaderPipeline(config=config, fetcher=fetcher, cache=SQLiteReaderCache(config.cache_path))
@@ -90,6 +114,34 @@ def test_read_url_for_ai_uses_cache(tmp_path: Path) -> None:
     assert fetcher.calls == 1
     assert second.trace.cache_hit is True
     assert second.financial_events
+
+
+def test_user_session_only_uses_authenticated_browser(tmp_path: Path) -> None:
+    fetcher = FakeFetcher()
+    browser_session_fetcher = FakeBrowserSessionFetcher()
+    config = ReaderConfig(cache_path=tmp_path / "cache.sqlite3")
+    pipeline = ReaderPipeline(
+        config=config,
+        fetcher=fetcher,
+        browser_session_fetcher=browser_session_fetcher,  # type: ignore[arg-type]
+        cache=SQLiteReaderCache(config.cache_path),
+    )
+
+    result = pipeline.read(
+        ReadUrlRequest(
+            url="https://example.com/article",
+            auth_strategy="user_session_only",
+            bypass_cache=True,
+        )
+    )
+
+    assert result.success is True
+    assert fetcher.calls == 0
+    assert browser_session_fetcher.calls == 1
+    assert result.trace.fetch_engine == "authenticated_browser"
+    assert result.trace.user_session_used is True
+    assert result.trace.browser_provider == "cdp"
+    assert result.trace.visited_urls == ["https://example.com/article"]
 
 
 def test_inspect_url_excludes_clean_text(tmp_path: Path) -> None:

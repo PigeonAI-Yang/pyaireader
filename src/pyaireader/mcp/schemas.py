@@ -9,6 +9,7 @@ from pyaireader.models import (
     HEALTH_SCHEMA_VERSION,
     INSPECT_RESULT_SCHEMA_VERSION,
     READ_RESULT_SCHEMA_VERSION,
+    READING_ITEM_SCHEMA_VERSION,
 )
 
 
@@ -61,6 +62,11 @@ class ReaderTraceMcpPayload(McpPayload):
     attempts: list[FetchAttemptMcpPayload] = Field(default_factory=list)
     redirects: list[RedirectHopMcpPayload] = Field(default_factory=list)
     problem_flags: list[str] = Field(default_factory=list)
+    auth_strategy: str | None = None
+    user_session_used: bool = False
+    browser_provider: str | None = None
+    visited_urls: list[str] = Field(default_factory=list)
+    user_task_scope: str | None = None
 
 
 class ReaderQualityMcpPayload(McpPayload):
@@ -138,6 +144,43 @@ class FinancialEventMcpPayload(McpPayload):
     evidence_ids: list[str] = Field(default_factory=list)
 
 
+class ReadingItemMcpPayload(McpPayload):
+    id: str = ""
+    source_url: str = ""
+    final_url: str | None = None
+    title: str | None = None
+    author: str | None = None
+    published_at_raw: str | None = None
+    clean_text: str = ""
+    content_hash: str = ""
+    quality: dict[str, Any] = Field(default_factory=dict)
+    trace: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    tags: list[str] = Field(default_factory=list)
+    project: str | None = None
+    created_at: str = ""
+    schema_version: str = READING_ITEM_SCHEMA_VERSION
+
+
+class ReadingItemSummaryMcpPayload(McpPayload):
+    id: str = ""
+    source_url: str = ""
+    final_url: str | None = None
+    title: str | None = None
+    author: str | None = None
+    published_at_raw: str | None = None
+    content_hash: str = ""
+    quality: dict[str, Any] = Field(default_factory=dict)
+    trace: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    tags: list[str] = Field(default_factory=list)
+    project: str | None = None
+    created_at: str = ""
+    schema_version: str = READING_ITEM_SCHEMA_VERSION
+    clean_text_length: int = 0
+    clean_text_preview: str = ""
+
+
 class ReadUrlMcpResult(McpPayload):
     success: bool
     url: str = ""
@@ -165,6 +208,10 @@ class ReadUrlMcpResult(McpPayload):
     error: ReaderErrorMcpPayload | None = None
     content_hash: str | None = None
     raw_html_hash: str | None = None
+    saved: bool = False
+    saved_item_id: str | None = None
+    saved_to: str | None = None
+    save_error: ReaderErrorMcpPayload | None = None
 
 
 class BatchReadUrlsMcpResult(McpPayload):
@@ -202,6 +249,83 @@ class ClearCacheMcpResult(McpPayload):
     error: ReaderErrorMcpPayload | None = None
 
 
+class StorageStatusMcpResult(McpPayload):
+    success: bool
+    config_path: str = ""
+    loaded_from_file: bool = False
+    default_store: str = "default"
+    stores: list[dict[str, Any]] = Field(default_factory=list)
+    reserved_drivers: list[str] = Field(default_factory=list)
+    error: ReaderErrorMcpPayload | None = None
+
+
+class SaveReadingItemMcpResult(McpPayload):
+    success: bool
+    store: str = "default"
+    item_id: str = ""
+    created: bool = False
+    item: ReadingItemMcpPayload | None = None
+    error: ReaderErrorMcpPayload | str | None = None
+
+
+class LibraryListMcpResult(McpPayload):
+    success: bool
+    store: str = "default"
+    count: int = 0
+    items: list[ReadingItemSummaryMcpPayload | ReadingItemMcpPayload] = Field(default_factory=list)
+    error: ReaderErrorMcpPayload | None = None
+
+
+class LibraryGetMcpResult(McpPayload):
+    success: bool
+    store: str = "default"
+    item_id: str = ""
+    item: ReadingItemMcpPayload | None = None
+    error: ReaderErrorMcpPayload | None = None
+
+
+class LibrarySearchMcpResult(McpPayload):
+    success: bool
+    store: str = "default"
+    query: str = ""
+    count: int = 0
+    items: list[ReadingItemSummaryMcpPayload | ReadingItemMcpPayload] = Field(default_factory=list)
+    error: ReaderErrorMcpPayload | None = None
+
+
+class BrowserSessionStatusMcpResult(McpPayload):
+    success: bool
+    provider_mode: str = "auto"
+    active_provider: str | None = None
+    available: bool = False
+    cdp_endpoint: str | None = None
+    profile_dir: str = ""
+    providers: list[dict[str, Any]] = Field(default_factory=list)
+    note: str = ""
+    error: ReaderErrorMcpPayload | None = None
+
+
+class PlatformEvidenceItemMcpPayload(McpPayload):
+    url: str = ""
+    author: str | None = None
+    published_at_raw: str | None = None
+    text: str = ""
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    relevance: float = 0.0
+    quality: ReaderQualityMcpPayload | None = None
+    evidence: list[EvidenceSnippetMcpPayload] = Field(default_factory=list)
+
+
+class PlatformSearchMcpResult(McpPayload):
+    success: bool
+    platform: str = ""
+    query: str = ""
+    items: list[PlatformEvidenceItemMcpPayload] = Field(default_factory=list)
+    trace: ReaderTraceMcpPayload | None = None
+    error: ReaderErrorMcpPayload | None = None
+    visited_urls: list[str] = Field(default_factory=list)
+
+
 class ReaderHealthMcpResult(McpPayload):
     success: bool
     schema_version: str = HEALTH_SCHEMA_VERSION
@@ -212,10 +336,10 @@ class ReaderHealthMcpResult(McpPayload):
     tools: list[str] = Field(default_factory=list)
     schemas: dict[str, str] = Field(default_factory=dict)
     fetch_strategies: list[str] = Field(default_factory=list)
+    auth_strategies: list[str] = Field(default_factory=list)
     return_formats: list[str] = Field(default_factory=list)
     default_parameters: dict[str, Any] = Field(default_factory=dict)
     cache_path: str = ""
     safety: dict[str, Any] = Field(default_factory=dict)
     mcp_http: dict[str, Any] | None = None
     error: ReaderErrorMcpPayload | None = None
-

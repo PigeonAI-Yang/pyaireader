@@ -32,6 +32,7 @@ class FetchResponse:
     text: str
     raw: bytes
     elapsed_ms: int
+    visible_text: str = ""
     headers: dict[str, str] = field(default_factory=dict)
     redirects: list[RedirectHop] = field(default_factory=list)
     raw_bytes_length: int = 0

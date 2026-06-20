@@ -1,22 +1,27 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from typing import Any, Literal
 
 
 FetchStrategy = Literal["auto", "http_only", "scrapling_first", "browser_first", "browser_only"]
+AuthStrategy = Literal["anonymous", "user_session_fallback", "user_session_only"]
 QualityLevel = Literal["strong", "usable", "weak", "failed"]
 
 READ_RESULT_SCHEMA_VERSION = "pyaireader.read_result.v1"
 INSPECT_RESULT_SCHEMA_VERSION = "pyaireader.inspect_result.v1"
 BATCH_READ_RESULT_SCHEMA_VERSION = "pyaireader.batch_read_result.v1"
 HEALTH_SCHEMA_VERSION = "pyaireader.health.v1"
+READING_ITEM_SCHEMA_VERSION = "pyaireader.reading_item.v1"
 
 
 @dataclass(frozen=True)
 class ReadUrlRequest:
     url: str
     fetch_strategy: FetchStrategy = "auto"
+    auth_strategy: AuthStrategy = "user_session_fallback"
     bypass_cache: bool = False
     ttl_seconds: int | None = None
     max_total_chars: int = 16000
@@ -26,12 +31,17 @@ class ReadUrlRequest:
     max_date_mentions: int = 30
     max_entity_items: int = 40
     return_format: Literal["json", "markdown"] = "json"
+    save: bool = False
+    save_to: str = "default"
+    project: str | None = None
+    tags: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
 class BatchReadUrlsRequest:
     urls: list[str]
     fetch_strategy: FetchStrategy = "auto"
+    auth_strategy: AuthStrategy = "user_session_fallback"
     bypass_cache: bool = False
     max_concurrency: int = 3
     max_total_chars_per_url: int = 16000
@@ -42,6 +52,7 @@ class BatchReadUrlsRequest:
 class InspectUrlRequest:
     url: str
     fetch_strategy: FetchStrategy = "auto"
+    auth_strategy: AuthStrategy = "anonymous"
     bypass_cache: bool = True
     html_preview_chars: int = 2000
 
@@ -187,6 +198,11 @@ class ReaderTrace:
     attempts: list[FetchAttempt] = field(default_factory=list)
     redirects: list[RedirectHop] = field(default_factory=list)
     problem_flags: list[str] = field(default_factory=list)
+    auth_strategy: AuthStrategy | None = None
+    user_session_used: bool = False
+    browser_provider: str | None = None
+    visited_urls: list[str] = field(default_factory=list)
+    user_task_scope: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -205,6 +221,59 @@ class ReaderErrorPayload:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+PlatformName = Literal["x"]
+PlatformTimeRange = Literal["latest", "24h", "7d", "30d"]
+PlatformFollowLinks = Literal["none", "same_platform", "same_platform_and_article_links"]
+
+
+@dataclass(frozen=True)
+class PlatformSearchRequest:
+    platform: PlatformName
+    query: str
+    auth_strategy: AuthStrategy = "user_session_fallback"
+    max_results: int = 30
+    max_pages: int = 2
+    time_range: PlatformTimeRange = "latest"
+    follow_links: PlatformFollowLinks = "same_platform"
+
+
+@dataclass
+class PlatformEvidenceItem:
+    url: str
+    author: str | None = None
+    published_at_raw: str | None = None
+    text: str = ""
+    metrics: dict[str, Any] = field(default_factory=dict)
+    relevance: float = 0.0
+    quality: ReaderQuality | None = None
+    evidence: list[EvidenceSnippet] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        data = asdict(self)
+        data["quality"] = self.quality.to_dict() if self.quality else None
+        data["evidence"] = [item.to_dict() for item in self.evidence]
+        return data
+
+
+@dataclass
+class PlatformSearchResult:
+    success: bool
+    platform: str
+    query: str
+    items: list[PlatformEvidenceItem] = field(default_factory=list)
+    trace: ReaderTrace | None = None
+    error: ReaderErrorPayload | dict[str, Any] | None = None
+    visited_urls: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        data = asdict(self)
+        data["items"] = [item.to_dict() for item in self.items]
+        data["trace"] = self.trace.to_dict() if self.trace else None
+        if isinstance(self.error, ReaderErrorPayload):
+            data["error"] = self.error.to_dict()
+        return data
 
 
 @dataclass
@@ -252,6 +321,10 @@ class ReadUrlResult:
     error: ReaderErrorPayload | dict[str, Any] | None = None
     content_hash: str | None = None
     raw_html_hash: str | None = None
+    saved: bool = False
+    saved_item_id: str | None = None
+    saved_to: str | None = None
+    save_error: ReaderErrorPayload | dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -264,4 +337,122 @@ class ReadUrlResult:
         data["trace"] = self.trace.to_dict() if self.trace else None
         if isinstance(self.error, ReaderErrorPayload):
             data["error"] = self.error.to_dict()
+        if isinstance(self.save_error, ReaderErrorPayload):
+            data["save_error"] = self.save_error.to_dict()
         return data
+
+
+@dataclass
+class ReadingItem:
+    id: str
+    source_url: str
+    final_url: str | None
+    title: str | None
+    author: str | None
+    published_at_raw: str | None
+    clean_text: str
+    content_hash: str
+    quality: dict[str, Any] = field(default_factory=dict)
+    trace: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
+    tags: list[str] = field(default_factory=list)
+    project: str | None = None
+    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    schema_version: str = READING_ITEM_SCHEMA_VERSION
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+def reading_item_from_read_result(
+    result: ReadUrlResult,
+    *,
+    project: str | None = None,
+    tags: list[str] | None = None,
+    metadata: dict[str, Any] | None = None,
+    created_at: str | None = None,
+) -> ReadingItem:
+    if not result.success:
+        raise ValueError("failed read results cannot be saved as reading items")
+    if not result.clean_text.strip():
+        raise ValueError("empty clean_text cannot be saved as a reading item")
+
+    quality = result.quality.to_dict() if result.quality else {}
+    trace = result.trace.to_dict() if result.trace else {}
+    item_metadata = {
+        "read_result_schema_version": result.schema_version,
+        "normalized_url": result.normalized_url,
+        "domain": result.domain,
+        "source": result.source,
+        "published_at_utc": result.published_at_utc,
+        "result_content_hash": result.content_hash,
+        "raw_html_hash": result.raw_html_hash,
+        "key_points": result.key_points,
+        "evidence": [item.to_dict() for item in result.evidence],
+        "numbers": [item.to_dict() for item in result.numbers],
+        "dates": [item.to_dict() for item in result.dates],
+        "entities": [item.to_dict() for item in result.entities],
+        "financial_events": [item.to_dict() for item in result.financial_events],
+    }
+    if metadata:
+        item_metadata.update(metadata)
+
+    content_hash = _stable_hash(result.clean_text)
+    source_url = result.url
+    final_url = result.final_url or result.normalized_url
+    return ReadingItem(
+        id=reading_item_id(source_url=source_url, final_url=final_url, content_hash=content_hash),
+        source_url=source_url,
+        final_url=final_url,
+        title=result.title,
+        author=result.author,
+        published_at_raw=result.published_at_raw,
+        clean_text=result.clean_text,
+        content_hash=content_hash,
+        quality=quality,
+        trace=trace,
+        metadata=item_metadata,
+        tags=_dedupe_text(tags or []),
+        project=project,
+        created_at=created_at or datetime.now(timezone.utc).isoformat(),
+    )
+
+
+def reading_item_from_dict(data: dict[str, Any]) -> ReadingItem:
+    return ReadingItem(
+        id=str(data["id"]),
+        source_url=str(data["source_url"]),
+        final_url=data.get("final_url"),
+        title=data.get("title"),
+        author=data.get("author"),
+        published_at_raw=data.get("published_at_raw"),
+        clean_text=str(data.get("clean_text", "")),
+        content_hash=str(data.get("content_hash") or _stable_hash(str(data.get("clean_text", "")))),
+        quality=dict(data.get("quality") or {}),
+        trace=dict(data.get("trace") or {}),
+        metadata=dict(data.get("metadata") or {}),
+        tags=list(data.get("tags") or []),
+        project=data.get("project"),
+        created_at=str(data.get("created_at") or datetime.now(timezone.utc).isoformat()),
+        schema_version=str(data.get("schema_version") or READING_ITEM_SCHEMA_VERSION),
+    )
+
+
+def reading_item_id(*, source_url: str, final_url: str | None, content_hash: str) -> str:
+    material = "\n".join([source_url, final_url or "", content_hash])
+    return f"ri_{_stable_hash(material)[:24]}"
+
+
+def _stable_hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _dedupe_text(items: list[str]) -> list[str]:
+    output: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        value = item.strip()
+        if value and value not in seen:
+            output.append(value)
+            seen.add(value)
+    return output
