@@ -8,10 +8,11 @@
 - `auth_strategy` support across CLI, MCP, HTTP API, and reader models:
   `anonymous`, `user_session_fallback`, and `user_session_only`.
 - User-authorized local browser session layer with CDP and pyaireader-managed persistent profile providers.
-- Explicit browser provider selection through `PYAIREADER_BROWSER_PROVIDER=auto/cdp/persistent_profile`.
+- Explicit browser provider selection through `PYAIREADER_BROWSER_PROVIDER=auto/cdp/edge_cdp_profile/persistent_profile`.
 - `pyaireader browser-status` and MCP/HTTP browser session status reporting, so users can see whether reads use CDP or pyaireader's persistent profile.
-- `pyaireader browser-login x --provider persistent_profile` for logging in to the managed browser profile.
+- `pyaireader browser-login x --provider edge_cdp_profile` for first-time login in the dedicated Edge-CDP profile, with `persistent_profile` kept as fallback.
 - `pyaireader edge-cdp-launch` helper for launching Edge with a CDP port and printing the required pyaireader environment variables.
+- `pyaireader edge-cdp-profile-launch` and `edge_cdp_profile` browser provider for a dedicated, persistent Edge-CDP profile on port 9334.
 - X Article and X status user-session fallback when logged-out public content does not expose the readable body.
 - X platform search/evidence collection through CLI, HTTP API, and MCP tools:
   `search_platform` and `collect_platform_evidence`.
@@ -25,17 +26,21 @@
 - CLI library commands: `storage-status`, `library list`, `library get`, `library search`, and `library export`.
 - MCP storage tools: `storage_status`, `save_reading_item`, `library_list`, `library_get`, and `library_search`.
 - HTTP storage endpoints: `/v1/storage-status`, `/v1/library/list`, `/v1/library/get`, `/v1/library/search`, and `/v1/library/save`.
-- Codex skill at `skills/pyaireader/SKILL.md` for repeatable pyaireader usage, X search, login-state handling, and no-downgrade completion rules.
+- Codex skill at `skills/pyaireader/SKILL.md` for repeatable pyaireader usage, platform workflow routing, login-state handling, and no-downgrade completion rules.
+- X/Twitter platform procedure at `skills/pyaireader/references/platforms/x.md`.
 
 ### Changed
 
 - Documented the boundary between reader cache and library/storage: cache is a temporary acceleration layer, while library/storage is the user material layer.
 - Updated `read_url` MCP annotations to reflect that the tool can write to local storage when called with `save=true`.
 - Kept SQLite as the default local store while documenting filesystem stores and future adapter directions instead of tying pyaireader to one project database.
-- Browser provider `auto` now auto-discovers user-started CDP endpoints on `PYAIREADER_BROWSER_CDP`, `127.0.0.1:9222`, and `127.0.0.1:9333`; it no longer silently opens pyaireader's managed persistent profile.
+- Browser provider `auto` now only checks the dedicated Edge-CDP profile endpoint `127.0.0.1:9334`; ordinary CDP endpoints require explicit `cdp` provider selection, and `auto` no longer silently opens pyaireader's managed persistent profile.
 - CDP browser reads now create background targets by default, so X search/detail collection does not repeatedly steal focus from the user's active browser window.
 - X platform search now ranks candidates by practical usefulness signals and exposes `usefulness_score` / `usefulness_signals` in item metrics.
-- Agent-facing X collection workflow now treats pyaireader's `persistent_profile` as the standard path, with first-time login and smoke testing before collection.
+- Agent-facing X collection workflow now treats the dedicated `edge_cdp_profile` channel as the standard path, with first-time login and smoke testing before collection.
+- Agent-facing platform guidance now keeps the main skill as a general reader entry point and moves special-platform rules into indexed reference files.
+- pyaireader-managed `persistent_profile` now launches Edge explicitly instead of Playwright's bundled Chromium, and reports Edge path details in browser status.
+- Browser status and browser-login now expose X login-cookie diagnostics for the managed profile without reading cookie values.
 
 ### Fixed
 
@@ -46,6 +51,8 @@
 - X platform search results are scored as short social evidence instead of being failed by long-article length thresholds.
 - Authenticated X status and X Article extractors are scored as social primary content instead of being failed by login chrome.
 - Reader eval corpus now covers positive HTML, PDF, X status, X Article, X search ranking, login shell, and JS shell cases.
+- X platform workflow no longer allows silent Chromium fallback when Edge is unavailable.
+- X search redirects to an X login page now fail as `x_login_required` instead of misleadingly reporting `platform_search_no_results`.
 
 ## 0.3.0 - 2026-06-20
 

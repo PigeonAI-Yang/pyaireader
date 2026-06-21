@@ -4,7 +4,12 @@ import argparse
 import json
 import sys
 
-from pyaireader.browser_sessions import BrowserSessionFetcher, launch_edge_cdp
+from pyaireader.browser_sessions import (
+    DEFAULT_EDGE_CDP_PROFILE_PORT,
+    BrowserSessionFetcher,
+    launch_edge_cdp,
+    launch_edge_cdp_profile,
+)
 from pyaireader.models import (
     BatchReadUrlsRequest,
     InspectUrlRequest,
@@ -64,7 +69,7 @@ def main() -> None:
     browser_status_parser.add_argument(
         "--provider",
         default=None,
-        choices=["auto", "cdp", "persistent_profile"],
+        choices=["auto", "cdp", "edge_cdp_profile", "persistent_profile"],
     )
     browser_status_parser.add_argument("--pretty", action="store_true")
 
@@ -72,8 +77,8 @@ def main() -> None:
     browser_login_parser.add_argument("platform", choices=["x"])
     browser_login_parser.add_argument(
         "--provider",
-        default="persistent_profile",
-        choices=["persistent_profile"],
+        default="edge_cdp_profile",
+        choices=["edge_cdp_profile", "persistent_profile"],
     )
     browser_login_parser.add_argument("--pretty", action="store_true")
 
@@ -84,6 +89,15 @@ def main() -> None:
     edge_cdp_parser.add_argument("--user-data-dir", default=None)
     edge_cdp_parser.add_argument("--wait-seconds", type=float, default=4.0)
     edge_cdp_parser.add_argument("--pretty", action="store_true")
+
+    edge_cdp_profile_parser = subparsers.add_parser("edge-cdp-profile-launch")
+    edge_cdp_profile_parser.add_argument("--profile", default="default")
+    edge_cdp_profile_parser.add_argument("--port", type=int, default=DEFAULT_EDGE_CDP_PROFILE_PORT)
+    edge_cdp_profile_parser.add_argument("--url", default="about:blank")
+    edge_cdp_profile_parser.add_argument("--edge-path", default=None)
+    edge_cdp_profile_parser.add_argument("--profile-dir", default=None)
+    edge_cdp_profile_parser.add_argument("--wait-seconds", type=float, default=4.0)
+    edge_cdp_profile_parser.add_argument("--pretty", action="store_true")
 
     clear_parser = subparsers.add_parser("clear-cache")
     clear_parser.add_argument("--url", default=None)
@@ -139,6 +153,18 @@ def main() -> None:
             url=args.url,
             edge_path=args.edge_path,
             user_data_dir=args.user_data_dir,
+            wait_seconds=args.wait_seconds,
+        )
+        _print_json(result, pretty=args.pretty)
+        return
+
+    if args.command == "edge-cdp-profile-launch":
+        result = launch_edge_cdp_profile(
+            profile=args.profile,
+            port=args.port,
+            url=args.url,
+            edge_path=args.edge_path,
+            profile_dir=args.profile_dir,
             wait_seconds=args.wait_seconds,
         )
         _print_json(result, pretty=args.pretty)

@@ -135,18 +135,20 @@ user_session_only
 User session providers:
 
 ```text
-PYAIREADER_BROWSER_PROVIDER=auto | cdp | persistent_profile
+PYAIREADER_BROWSER_PROVIDER=auto | cdp | edge_cdp_profile | persistent_profile
 ```
 
-- `auto`: default. Discover `PYAIREADER_BROWSER_CDP`, `127.0.0.1:9222`, and `127.0.0.1:9333`, then connect only to a user-started Edge/Chrome CDP browser. If none is reachable, fail explicitly instead of opening a managed profile.
+- `auto`: default. Discover only the dedicated Edge-CDP profile endpoint `127.0.0.1:9334`. If it is not reachable, fail explicitly instead of touching the user's daily Edge windows or opening a managed profile.
 - `cdp`: only use the user-started Edge/Chrome CDP endpoint. If it is not reachable, fail instead of falling back. CDP reads use background targets by default, so platform search/detail reads do not repeatedly steal focus from the user's active browser window.
-- `persistent_profile`: only use pyaireader's managed browser profile. This provider is opened only when explicitly selected.
+- `edge_cdp_profile`: standard path for logged-in sites. It uses real Edge with pyaireader's own persistent profile on port `9334`, so Agents do not open tabs in the user's daily Edge windows.
+- `persistent_profile`: fallback/diagnostic managed profile. This provider is opened only when explicitly selected.
 
 Useful checks:
 
 ```powershell
 uv run pyaireader browser-status --pretty
-uv run pyaireader browser-login x --provider persistent_profile --pretty
+uv run pyaireader browser-login x --provider edge_cdp_profile --pretty
+uv run pyaireader edge-cdp-profile-launch --url https://x.com/home --pretty
 uv run pyaireader edge-cdp-launch --pretty
 ```
 
@@ -157,7 +159,7 @@ $env:PYAIREADER_BROWSER_PROVIDER="cdp"
 $env:PYAIREADER_BROWSER_CDP="http://127.0.0.1:9222"
 ```
 
-An already-open normal Edge window usually cannot be retrofitted into CDP mode. Use `browser-status` to verify the actual provider before reading X content. If CDP is unavailable, close the normal Edge process and launch Edge through `edge-cdp-launch`, or explicitly choose `persistent_profile`.
+An already-open normal Edge window usually cannot be retrofitted into CDP mode. Use `edge_cdp_profile` for logged-in sites by default. Only use ordinary `cdp` when the user explicitly wants pyaireader to attach to a daily browser session.
 
 For debugging only, background target creation can be disabled:
 

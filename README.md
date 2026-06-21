@@ -74,12 +74,24 @@ cd pyaireader
 uv sync --extra dev --extra extractors
 ```
 
+如果要读取 X/Twitter 这类需要登录态的平台，必须安装 browser extra：
+
+```powershell
+uv sync --extra dev --extra extractors --extra browser
+```
+
 完整安装，包含 Scrapling、Playwright、PDF 等能力：
 
 ```powershell
 uv sync --extra dev --extra extractors --extra browser --extra pdf
 uv run playwright install chromium
 ```
+
+说明：
+
+- `edge_cdp_profile` 使用本机已安装的 Microsoft Edge，不需要把你的日常 Edge 窗口交给 Agent。
+- `uv run playwright install chromium` 只对 raw browser / Chromium fallback 有用；稳定 X 登录态通道用的是系统 Edge + CDP。
+- 当前稳定复现路径主要验证在 Windows + Microsoft Edge。macOS / Linux 用户可以显式传 `--edge-path`，或改用普通 `cdp` provider。
 
 ### 全局命令安装
 
@@ -128,6 +140,63 @@ uv run pyaireader read "https://x.com/sairahul1/status/2067540315620405543?s=20"
 uv run pyaireader search-platform x "AAOI" --auth-strategy user_session_fallback --max-results 10 --pretty
 ```
 
+## 稳定读取 X / 登录站点
+
+X 这类平台不要直接依赖匿名抓取。推荐流程是让 `pyaireader` 打开一个专用 Edge profile，用户只在这个专用窗口里登录一次，后续搜索和读取都复用这份登录态。
+
+第一次启动专用 Edge-CDP profile：
+
+```powershell
+uv run pyaireader edge-cdp-profile-launch --url https://x.com/home --pretty
+```
+
+在打开的专用 Edge 窗口里登录 X，登录后保持窗口开着。这个窗口使用独立目录：
+
+```text
+~/.pyaireader/edge-cdp-profiles/default
+```
+
+确认专用通道已连接：
+
+```powershell
+uv run pyaireader browser-status --provider edge_cdp_profile --pretty
+```
+
+应看到：
+
+```text
+provider_mode = edge_cdp_profile
+active_provider = edge_cdp_profile
+available = true
+cdp_endpoint = http://127.0.0.1:9334
+```
+
+再跑真实 X smoke test：
+
+```powershell
+$env:PYAIREADER_BROWSER_PROVIDER='edge_cdp_profile'
+uv run pyaireader search-platform x "AI infrastructure" --auth-strategy user_session_fallback --max-results 1 --max-pages 1 --time-range 7d --pretty
+```
+
+结果里要确认：
+
+```text
+success = true
+trace.fetch_engine = authenticated_browser
+trace.browser_provider = edge_cdp_profile
+trace.user_session_used = true
+```
+
+如果 `browser-status` 里的 cookie 诊断显示 `x_cookie_db_unreadable` 或 `logged_in=false`，但真实 `search-platform x` 能返回内容，以真实搜索结果为准。Edge 运行时可能会锁住 Cookies 数据库，cookie 诊断只是辅助信号。
+
+关掉专用 Edge 窗口后，下次重新运行：
+
+```powershell
+uv run pyaireader edge-cdp-profile-launch --url https://x.com/home --pretty
+```
+
+正常情况下不需要重新登录。
+
 诊断一个 URL 为什么读不好：
 
 ```powershell
@@ -173,12 +242,13 @@ user_session_only
 用户会话 provider 选择顺序：
 
 ```text
-PYAIREADER_BROWSER_PROVIDER=auto | cdp | persistent_profile
+PYAIREADER_BROWSER_PROVIDER=auto | cdp | edge_cdp_profile | persistent_profile
 ```
 
-- `auto`：默认。自动探测 `PYAIREADER_BROWSER_CDP`、`127.0.0.1:9222`、`127.0.0.1:9333`，只连接用户已经启动的 Edge/Chrome CDP。找不到就明确失败，不会偷偷打开独立 profile。
+- `auto`：默认。只探测专用 Edge-CDP profile 端口 `127.0.0.1:9334`。找不到就明确失败，不会碰用户日常 Edge，也不会偷偷打开独立 profile。
 - `cdp`：只连接用户启动的 CDP 浏览器。接不上就失败，不会偷偷 fallback 到独立 profile。默认用 CDP background target 读页面，避免反复抢用户当前窗口的前台焦点。
-- `persistent_profile`：只使用 `pyaireader` 管理的独立浏览器 profile。只有显式选择这个 provider 时才会打开。第一次需要用户自己在这个 profile 里登录 X。
+- `edge_cdp_profile`：登录网站的标准通道。用真实 Edge 打开 `pyaireader` 自己的 profile，默认端口 `9334`，后续读取复用这份登录态，不打开用户日常 Edge 的标签页。
+- `persistent_profile`：备用诊断通道。只有显式选择这个 provider 时才会打开。
 
 它不会直接读取浏览器 cookie 数据库。浏览器会话只执行打开页面、等待、搜索、提取正文、打开有限结果链接这些只读动作。
 
@@ -194,19 +264,25 @@ $env:PYAIREADER_CDP_BACKGROUND_TARGET='0'
 uv run pyaireader browser-status --pretty
 ```
 
-给 `pyaireader` 的独立 profile 登录 X：
+第一次给专用 Edge-CDP profile 登录 X：
 
 ```powershell
-uv run pyaireader browser-login x --provider persistent_profile --pretty
+uv run pyaireader browser-login x --provider edge_cdp_profile --pretty
 ```
 
-如果 `browser-status` 没有连上 CDP，可以让 `pyaireader` 帮你用 CDP 模式启动 Edge：
+也可以只启动专用 profile：
+
+```powershell
+uv run pyaireader edge-cdp-profile-launch --url https://x.com/home --pretty
+```
+
+如果明确要启动普通 CDP，可以让 `pyaireader` 帮你用 CDP 模式启动 Edge：
 
 ```powershell
 uv run pyaireader edge-cdp-launch --pretty
 ```
 
-命令成功后会返回建议设置。也可以不设置 `PYAIREADER_BROWSER_CDP`，`auto` 会扫描常见本机端口：
+命令成功后会返回建议设置。普通 `cdp` 是显式备用路径，只有你明确要连接某个已启动的 CDP 浏览器时才这样设置：
 
 ```powershell
 $env:PYAIREADER_BROWSER_PROVIDER='cdp'
@@ -214,7 +290,7 @@ $env:PYAIREADER_BROWSER_CDP='http://127.0.0.1:9222'
 uv run pyaireader browser-status --pretty
 ```
 
-已经用普通方式打开的 Edge，后面再补 `--remote-debugging-port` 通常接不上。要复用登录态，先用 `browser-status` 确认是否已经连到 CDP；没连上就关闭普通 Edge，再用 `edge-cdp-launch` 启动，或者显式选择 `persistent_profile`。
+已经用普通方式打开的 Edge，后面再补 `--remote-debugging-port` 通常接不上。需要登录态网页时，优先用 `edge_cdp_profile`；只有明确要复用日常 Edge 时，才用普通 `cdp`。
 
 ## 保存资料：cache 和 library 不一样
 

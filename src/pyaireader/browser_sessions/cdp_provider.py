@@ -12,17 +12,35 @@ from pyaireader.browser_sessions.base import (
     BrowserReadOptions,
     BrowserSessionNotAvailable,
 )
+from pyaireader.browser_sessions.edge_launcher import DEFAULT_EDGE_CDP_PROFILE_PORT
 from pyaireader.browser_runtime import run_sync_browser_operation
 from pyaireader.reader.safety import assert_url_safe
 
-DEFAULT_CDP_ENDPOINTS = ("http://127.0.0.1:9222", "http://127.0.0.1:9333")
+DEFAULT_EDGE_CDP_PROFILE_ENDPOINT = f"http://127.0.0.1:{DEFAULT_EDGE_CDP_PROFILE_PORT}"
+DEFAULT_CDP_ENDPOINTS = (
+    DEFAULT_EDGE_CDP_PROFILE_ENDPOINT,
+    "http://127.0.0.1:9222",
+    "http://127.0.0.1:9333",
+)
 
 
 class CDPBrowserSessionProvider:
     name = "cdp"
 
-    def __init__(self, endpoint: str | None = None, *, background_pages: bool | None = None) -> None:
-        self.endpoint = endpoint or os.getenv("PYAIREADER_BROWSER_CDP")
+    def __init__(
+        self,
+        endpoint: str | None = None,
+        *,
+        background_pages: bool | None = None,
+        name: str | None = None,
+        use_env_endpoint: bool = True,
+    ) -> None:
+        self.name = name or "cdp"
+        self.endpoint = (
+            os.getenv("PYAIREADER_BROWSER_CDP")
+            if endpoint is None and use_env_endpoint
+            else endpoint
+        )
         self.background_pages = (
             _env_bool("PYAIREADER_CDP_BACKGROUND_TARGET", default=True)
             if background_pages is None
@@ -141,8 +159,19 @@ def _endpoint_reachable(endpoint: str | None) -> bool:
         return False
 
 
-def discover_cdp_endpoint(preferred_endpoint: str | None = None) -> str | None:
-    candidates = [preferred_endpoint, os.getenv("PYAIREADER_BROWSER_CDP"), *DEFAULT_CDP_ENDPOINTS]
+def discover_cdp_endpoint(
+    preferred_endpoint: str | None = None,
+    *,
+    dedicated_first: bool = False,
+) -> str | None:
+    env_endpoint = os.getenv("PYAIREADER_BROWSER_CDP")
+    if dedicated_first and preferred_endpoint is None:
+        candidates = [
+            os.getenv("PYAIREADER_EDGE_CDP_PROFILE_ENDPOINT"),
+            DEFAULT_EDGE_CDP_PROFILE_ENDPOINT,
+        ]
+    else:
+        candidates = [preferred_endpoint, env_endpoint, *DEFAULT_CDP_ENDPOINTS]
     seen: set[str] = set()
     for endpoint in candidates:
         if not endpoint or endpoint in seen:

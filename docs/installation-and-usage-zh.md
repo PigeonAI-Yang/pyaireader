@@ -171,6 +171,80 @@ uv run playwright install chromium
 > - 默认的读取顺序是 `HTTP → Scrapling → raw browser`。
 > - 不建议一上来就把 browser 放最前面，成本高、速度慢。
 > - 对大多数公开网页，建议先让 HTTP 和 Scrapling 试试。
+> - 如果要稳定读取 X/Twitter 这类登录后内容，至少要安装 `--extra browser`，因为专用 Edge-CDP 通道需要 Playwright 的 CDP 连接能力。
+> - 专用 `edge_cdp_profile` 使用本机 Microsoft Edge，不需要 `playwright install chromium`。只有 raw browser / Chromium fallback 才需要安装 Playwright Chromium。
+
+### 复现稳定的 X / 登录站点读取
+
+这套流程主要验证环境是 Windows + Microsoft Edge。
+
+目标不是复用你日常正在用的 Edge 窗口，而是让 `pyaireader` 打开一个自己的专用 Edge profile。用户只需要在这个专用窗口里登录一次，后续 Agent 搜索 X、读取推文、读取 X Article，都复用这份登录态。
+
+专用 profile 默认位置：
+
+```text
+~/.pyaireader/edge-cdp-profiles/default
+```
+
+默认 CDP endpoint：
+
+```text
+http://127.0.0.1:9334
+```
+
+第一次启动专用 Edge：
+
+```powershell
+uv run pyaireader edge-cdp-profile-launch --url https://x.com/home --pretty
+```
+
+然后在打开的专用 Edge 窗口里登录 X。登录完成后不要关窗口，先做状态检查：
+
+```powershell
+uv run pyaireader browser-status --provider edge_cdp_profile --pretty
+```
+
+正常时应该看到这些信息：
+
+```text
+provider_mode = edge_cdp_profile
+active_provider = edge_cdp_profile
+available = true
+cdp_endpoint = http://127.0.0.1:9334
+```
+
+再跑一个真实搜索 smoke test：
+
+```powershell
+$env:PYAIREADER_BROWSER_PROVIDER='edge_cdp_profile'
+uv run pyaireader search-platform x "AI infrastructure" --auth-strategy user_session_fallback --max-results 1 --max-pages 1 --time-range 7d --pretty
+```
+
+成功结果里要确认：
+
+```text
+success = true
+trace.fetch_engine = authenticated_browser
+trace.browser_provider = edge_cdp_profile
+trace.user_session_used = true
+```
+
+如果 `browser-status` 里出现：
+
+```text
+x_cookie_db_unreadable
+logged_in = false
+```
+
+不要马上判断登录失败。Edge 窗口运行时可能锁住 Cookies 数据库。是否真的登录成功，以真实 `search-platform x` smoke test 为准。
+
+关掉专用 Edge 后，下次重新打开：
+
+```powershell
+uv run pyaireader edge-cdp-profile-launch --url https://x.com/home --pretty
+```
+
+正常情况下不需要重新登录。重新跑 `search-platform x` 能返回真实内容，就说明登录态复用成功。
 
 ## 4. 安装全局命令
 
@@ -303,12 +377,13 @@ user_session_only
 用户会话 provider 选择顺序：
 
 ```text
-PYAIREADER_BROWSER_PROVIDER=auto | cdp | persistent_profile
+PYAIREADER_BROWSER_PROVIDER=auto | cdp | edge_cdp_profile | persistent_profile
 ```
 
-- `auto`：默认。自动探测 `PYAIREADER_BROWSER_CDP`、`127.0.0.1:9222`、`127.0.0.1:9333`，只连接用户已经启动的 Edge/Chrome CDP。找不到就明确失败，不会偷偷打开独立 profile。
+- `auto`：默认。只探测专用 Edge-CDP profile 端口 `127.0.0.1:9334`。找不到就明确失败，不会碰用户日常 Edge，也不会偷偷打开独立 profile。
 - `cdp`：只连接用户启动的 CDP 浏览器。接不上就失败，不会偷偷 fallback 到独立 profile。默认用 CDP background target 读页面，避免反复抢用户当前窗口的前台焦点。
-- `persistent_profile`：只使用 `pyaireader` 管理的独立浏览器 profile。只有显式选择这个 provider 时才会打开。第一次需要用户自己在这个 profile 里登录 X。
+- `edge_cdp_profile`：登录网站的标准通道。用真实 Edge 打开 `pyaireader` 自己的 profile，默认端口 `9334`，后续读取复用这份登录态，不打开用户日常 Edge 的标签页。
+- `persistent_profile`：备用诊断通道。只有显式选择这个 provider 时才会打开。
 
 它不会直接读取浏览器 cookie 数据库。浏览器会话只执行打开页面、等待、搜索、提取正文、打开有限结果链接这些只读动作。
 
@@ -324,19 +399,25 @@ $env:PYAIREADER_CDP_BACKGROUND_TARGET='0'
 uv run pyaireader browser-status --pretty
 ```
 
-给 `pyaireader` 的独立 profile 登录 X：
+第一次给专用 Edge-CDP profile 登录 X：
 
 ```powershell
-uv run pyaireader browser-login x --provider persistent_profile --pretty
+uv run pyaireader browser-login x --provider edge_cdp_profile --pretty
 ```
 
-如果 `browser-status` 没有连上 CDP，可以让 `pyaireader` 帮你用 CDP 模式启动 Edge：
+也可以只启动专用 profile：
+
+```powershell
+uv run pyaireader edge-cdp-profile-launch --url https://x.com/home --pretty
+```
+
+如果明确要启动普通 CDP，可以让 `pyaireader` 帮你用 CDP 模式启动 Edge：
 
 ```powershell
 uv run pyaireader edge-cdp-launch --pretty
 ```
 
-命令成功后会返回建议设置。也可以不设置 `PYAIREADER_BROWSER_CDP`，`auto` 会扫描常见本机端口：
+命令成功后会返回建议设置。普通 `cdp` 是显式备用路径，只有你明确要连接某个已启动的 CDP 浏览器时才这样设置：
 
 ```powershell
 $env:PYAIREADER_BROWSER_PROVIDER='cdp'
@@ -344,7 +425,7 @@ $env:PYAIREADER_BROWSER_CDP='http://127.0.0.1:9222'
 uv run pyaireader browser-status --pretty
 ```
 
-已经用普通方式打开的 Edge，后面再补 `--remote-debugging-port` 通常接不上。要复用登录态，先用 `browser-status` 确认是否已经连到 CDP；没连上就关闭普通 Edge，再用 `edge-cdp-launch` 启动，或者显式选择 `persistent_profile`。
+已经用普通方式打开的 Edge，后面再补 `--remote-debugging-port` 通常接不上。需要登录态网页时，优先用 `edge_cdp_profile`；只有明确要复用日常 Edge 时，才用普通 `cdp`。
 
 ### 诊断一个 URL 为什么读不好
 

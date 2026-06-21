@@ -149,6 +149,18 @@ X_SEARCH_SIGNAL_HTML = """
 </html>
 """
 
+X_LOGIN_HTML = """
+<!doctype html>
+<html>
+  <body>
+    <main>
+      <span>Log in</span>
+      <span>Sign up</span>
+    </main>
+  </body>
+</html>
+"""
+
 X_STATUS_DETAIL_HTML = """
 <!doctype html>
 <html>
@@ -244,7 +256,7 @@ class MappingFetcher:
 
 
 class FakeBrowserSessionFetcher:
-    def __init__(self, mapping: dict[str, str | tuple[str, str]]) -> None:
+    def __init__(self, mapping: dict[str, str | tuple[str, str] | tuple[str, str, str]]) -> None:
         self.mapping = mapping
         self.calls: list[tuple[str, str | None]] = []
 
@@ -259,10 +271,17 @@ class FakeBrowserSessionFetcher:
                 value = self.mapping.get("x_status_detail")
         if value is None:
             raise AssertionError(f"unexpected browser fetch: {url}")
-        text, visible_text = value if isinstance(value, tuple) else (value, "")
+        text = value
+        visible_text = ""
+        final_url = url
+        if isinstance(value, tuple):
+            text = value[0]
+            visible_text = value[1]
+            if len(value) == 3:
+                final_url = value[2]
         return _response(
             url,
-            url,
+            final_url,
             text,
             visible_text=visible_text,
             headers={
@@ -599,6 +618,35 @@ def test_x_search_anonymous_does_not_use_user_session(tmp_path: Path) -> None:
     assert result.trace is not None
     assert result.trace.user_session_used is False
     assert browser.calls == []
+
+
+def test_x_search_login_page_reports_login_required(tmp_path: Path) -> None:
+    fetcher = MappingFetcher()
+    browser = FakeBrowserSessionFetcher(
+        {
+            "x_search": (
+                X_LOGIN_HTML,
+                "Log in\nSign up",
+                "https://x.com/i/jf/onboarding/web?redirect_after_login=%2Fsearch&mode=login",
+            )
+        }
+    )
+    pipeline = make_pipeline(tmp_path, fetcher, browser_session_fetcher=browser)
+
+    result = pipeline.search_platform(
+        PlatformSearchRequest(platform="x", query="AAOI", auth_strategy="user_session_only")
+    )
+
+    assert result.success is False
+    assert result.error is not None
+    error = result.error.to_dict() if hasattr(result.error, "to_dict") else result.error
+    assert error["code"] == "x_login_required"
+    assert error["retryable"] is True
+    assert result.trace is not None
+    assert "x_login_required" in result.trace.problem_flags
+    assert result.trace.visited_urls == [
+        "https://x.com/i/jf/onboarding/web?redirect_after_login=%2Fsearch&mode=login"
+    ]
 
 
 def _response(

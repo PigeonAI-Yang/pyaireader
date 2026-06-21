@@ -44,6 +44,13 @@ class XSearchReader:
             except Exception as exc:
                 return _failure(request, trace, "browser_session_not_available", str(exc))
             trace.visited_urls = _dedupe([*trace.visited_urls, response.final_url])
+            if _looks_like_x_login_page(response):
+                return _failure(
+                    request,
+                    trace,
+                    "x_login_required",
+                    "X search opened a login page. Log in to the pyaireader browser profile and retry.",
+                )
             candidates.extend(_extract_search_candidates(response.text, base_url=response.final_url))
             if len(candidates) >= request.max_results:
                 break
@@ -188,6 +195,18 @@ def _extract_search_candidates(document: str, *, base_url: str) -> list[_SearchC
     return _dedupe_candidates(parser.candidates)
 
 
+def _looks_like_x_login_page(response) -> bool:  # noqa: ANN001
+    final_url = (getattr(response, "final_url", "") or "").lower()
+    if "/i/jf/onboarding/" in final_url:
+        return True
+    if "mode=login" in final_url or "redirect_after_login=" in final_url:
+        return True
+    visible_text = normalize_text(getattr(response, "visible_text", "") or "").lower()
+    if "log in" in visible_text and "sign up" in visible_text:
+        return True
+    return False
+
+
 def _rank_candidates(query: str, candidates: list[_SearchCandidate]) -> list[_SearchCandidate]:
     return sorted(
         candidates,
@@ -299,7 +318,7 @@ def _failure(
         error=ReaderErrorPayload(
             code=code,
             message=message,
-            retryable=code in {"browser_session_not_available"},
+            retryable=code in {"browser_session_not_available", "x_login_required"},
             suggested_next_action="use_local_browser_session_or_reduce_scope",
             type="PlatformSearchError",
         ),

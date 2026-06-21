@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Literal, Protocol
 
 
-BrowserProviderMode = Literal["auto", "cdp", "persistent_profile"]
+BrowserProviderMode = Literal["auto", "cdp", "edge_cdp_profile", "persistent_profile"]
 
 
 class BrowserSessionError(Exception):

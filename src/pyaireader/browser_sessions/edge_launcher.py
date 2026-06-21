@@ -12,6 +12,8 @@ DEFAULT_EDGE_PATHS = [
     Path(os.environ.get("ProgramFiles", "")) / "Microsoft" / "Edge" / "Application" / "msedge.exe",
     Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "Edge" / "Application" / "msedge.exe",
 ]
+DEFAULT_EDGE_CDP_PROFILE = "default"
+DEFAULT_EDGE_CDP_PROFILE_PORT = 9334
 
 
 def launch_edge_cdp(
@@ -21,10 +23,11 @@ def launch_edge_cdp(
     edge_path: str | Path | None = None,
     user_data_dir: str | Path | None = None,
     wait_seconds: float = 4.0,
+    provider: str = "cdp",
 ) -> dict[str, object]:
     if port <= 0 or port > 65535:
         raise ValueError("port must be between 1 and 65535")
-    executable = Path(edge_path) if edge_path else _find_edge_executable()
+    executable = Path(edge_path) if edge_path else find_edge_executable()
     if executable is None or not executable.exists():
         return _result(
             success=False,
@@ -34,6 +37,7 @@ def launch_edge_cdp(
             user_data_dir=user_data_dir,
             process_id=None,
             message="edge_executable_not_found",
+            provider=provider,
         )
 
     args = [
@@ -43,7 +47,9 @@ def launch_edge_cdp(
         url,
     ]
     if user_data_dir:
-        args.insert(1, f"--user-data-dir={Path(user_data_dir)}")
+        profile_dir = Path(user_data_dir)
+        profile_dir.mkdir(parents=True, exist_ok=True)
+        args.insert(1, f"--user-data-dir={profile_dir}")
 
     try:
         process = subprocess.Popen(  # noqa: S603
@@ -61,6 +67,7 @@ def launch_edge_cdp(
             user_data_dir=user_data_dir,
             process_id=None,
             message=f"edge_launch_failed: {exc}",
+            provider=provider,
         )
     reachable = _wait_until_reachable(port, wait_seconds=wait_seconds)
     message = (
@@ -76,14 +83,72 @@ def launch_edge_cdp(
         user_data_dir=user_data_dir,
         process_id=process.pid,
         message=message,
+        provider=provider,
     )
 
 
-def _find_edge_executable() -> Path | None:
+def default_edge_cdp_profile_dir(profile: str = DEFAULT_EDGE_CDP_PROFILE) -> Path:
+    profile_name = _normalize_profile_name(profile)
+    return Path.home() / ".pyaireader" / "edge-cdp-profiles" / profile_name
+
+
+def launch_edge_cdp_profile(
+    *,
+    profile: str = DEFAULT_EDGE_CDP_PROFILE,
+    port: int = DEFAULT_EDGE_CDP_PROFILE_PORT,
+    url: str = "about:blank",
+    edge_path: str | Path | None = None,
+    profile_dir: str | Path | None = None,
+    wait_seconds: float = 4.0,
+) -> dict[str, object]:
+    resolved_profile = _normalize_profile_name(profile)
+    resolved_profile_dir = (
+        Path(profile_dir)
+        if profile_dir
+        else default_edge_cdp_profile_dir(resolved_profile)
+    )
+    result = launch_edge_cdp(
+        port=port,
+        url=url,
+        edge_path=edge_path,
+        user_data_dir=resolved_profile_dir,
+        wait_seconds=wait_seconds,
+        provider="edge_cdp_profile",
+    )
+    result["profile"] = resolved_profile
+    result["profile_dir"] = str(resolved_profile_dir)
+    result["non_disruptive"] = True
+    endpoint = str(result["endpoint"])
+    env = result.get("env")
+    if isinstance(env, dict):
+        env["PYAIREADER_EDGE_CDP_PROFILE_ENDPOINT"] = endpoint
+    powershell = result.get("powershell")
+    if isinstance(powershell, list):
+        powershell.insert(
+            2,
+            f"$env:PYAIREADER_EDGE_CDP_PROFILE_ENDPOINT='{endpoint}'",
+        )
+    if result.get("success"):
+        result["message"] = "edge_cdp_profile_available"
+    elif result.get("message") == (
+        "edge_started_but_cdp_not_reachable; close normal Edge windows and launch again, "
+        "or use persistent_profile"
+    ):
+        result["message"] = (
+            "edge_cdp_profile_started_but_not_reachable; close the dedicated "
+            "pyaireader Edge window and launch again"
+        )
+    return result
+
+
+def find_edge_executable() -> Path | None:
     for path in DEFAULT_EDGE_PATHS:
         if path and path.exists():
             return path
     return None
+
+
+_find_edge_executable = find_edge_executable
 
 
 def _wait_until_reachable(port: int, *, wait_seconds: float) -> bool:
@@ -107,6 +172,15 @@ def _endpoint(port: int) -> str:
     return f"http://127.0.0.1:{port}"
 
 
+def _normalize_profile_name(profile: str) -> str:
+    profile_name = (profile or "").strip()
+    if not profile_name:
+        raise ValueError("profile must not be empty")
+    if profile_name in {".", ".."} or "/" in profile_name or "\\" in profile_name:
+        raise ValueError("profile must be a simple name without path separators")
+    return profile_name
+
+
 def _result(
     *,
     success: bool,
@@ -116,11 +190,12 @@ def _result(
     user_data_dir: str | Path | None,
     process_id: int | None,
     message: str,
+    provider: str = "cdp",
 ) -> dict[str, object]:
     return {
         "success": success,
         "browser": "edge",
-        "provider": "cdp",
+        "provider": provider,
         "port": port,
         "endpoint": endpoint,
         "edge_path": str(edge_path) if edge_path else None,
@@ -128,11 +203,11 @@ def _result(
         "process_id": process_id,
         "message": message,
         "env": {
-            "PYAIREADER_BROWSER_PROVIDER": "cdp",
+            "PYAIREADER_BROWSER_PROVIDER": provider,
             "PYAIREADER_BROWSER_CDP": endpoint,
         },
         "powershell": [
-            "$env:PYAIREADER_BROWSER_PROVIDER='cdp'",
+            f"$env:PYAIREADER_BROWSER_PROVIDER='{provider}'",
             f"$env:PYAIREADER_BROWSER_CDP='{endpoint}'",
             "uv run pyaireader browser-status --pretty",
         ],
