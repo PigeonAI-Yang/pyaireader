@@ -25,6 +25,7 @@
 - CLI library commands: `storage-status`, `library list`, `library get`, `library search`, and `library export`.
 - MCP storage tools: `storage_status`, `save_reading_item`, `library_list`, `library_get`, and `library_search`.
 - HTTP storage endpoints: `/v1/storage-status`, `/v1/library/list`, `/v1/library/get`, `/v1/library/search`, and `/v1/library/save`.
+- Codex skill at `skills/pyaireader/SKILL.md` for repeatable pyaireader usage, X search, login-state handling, and no-downgrade completion rules.
 
 ### Changed
 
@@ -34,6 +35,7 @@
 - Browser provider `auto` now auto-discovers user-started CDP endpoints on `PYAIREADER_BROWSER_CDP`, `127.0.0.1:9222`, and `127.0.0.1:9333`; it no longer silently opens pyaireader's managed persistent profile.
 - CDP browser reads now create background targets by default, so X search/detail collection does not repeatedly steal focus from the user's active browser window.
 - X platform search now ranks candidates by practical usefulness signals and exposes `usefulness_score` / `usefulness_signals` in item metrics.
+- Agent-facing X collection workflow now treats pyaireader's `persistent_profile` as the standard path, with first-time login and smoke testing before collection.
 
 ### Fixed
 
@@ -42,6 +44,8 @@
 - `read_url(save=true)` can save successful cached reads without mixing request-specific storage fields into the reader cache.
 - Raw browser and user-session browser reads work under MCP hosts that already own an asyncio loop by running sync Playwright operations in a browser worker thread.
 - X platform search results are scored as short social evidence instead of being failed by long-article length thresholds.
+- Authenticated X status and X Article extractors are scored as social primary content instead of being failed by login chrome.
+- Reader eval corpus now covers positive HTML, PDF, X status, X Article, X search ranking, login shell, and JS shell cases.
 
 ## 0.3.0 - 2026-06-20
 
