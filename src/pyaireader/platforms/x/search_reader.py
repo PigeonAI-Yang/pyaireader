@@ -12,10 +12,14 @@ from pyaireader.models import (
     ReaderTrace,
 )
 from pyaireader.platforms.x.evidence_collector import build_platform_evidence_item
+from pyaireader.platforms.x.request_guard import XRequestGuard, XRequestGuardBlocked
 
 
 class XSearchReader:
     name = "x_search"
+
+    def __init__(self, request_guard: XRequestGuard | None = None) -> None:
+        self.request_guard = request_guard or XRequestGuard()
 
     def search(
         self,
@@ -40,8 +44,16 @@ class XSearchReader:
         candidates: list[_SearchCandidate] = []
         for search_url in _bounded_search_urls(request):
             try:
+                self.request_guard.wait()
                 response = fetch_user_session_url(search_url, "x_search")
+                if _looks_like_x_rate_limit_page(response):
+                    self.request_guard.record_failure(rate_limited=True)
+                    return _failure(request, trace, "x_safety_cooldown", "X returned a rate-limit or retry-later page; collection is cooling down.")
+                self.request_guard.record_success()
+            except XRequestGuardBlocked as exc:
+                return _failure(request, trace, "x_safety_cooldown", str(exc))
             except Exception as exc:
+                self.request_guard.record_failure()
                 return _failure(request, trace, "browser_session_not_available", str(exc))
             trace.visited_urls = _dedupe([*trace.visited_urls, response.final_url])
             if _looks_like_x_login_page(response):
@@ -65,15 +77,22 @@ class XSearchReader:
             published_at_raw = candidate.published_at_raw
             if request.follow_links != "none":
                 try:
+                    self.request_guard.wait()
                     detail = fetch_user_session_url(candidate.url, "x_search_result")
+                    if _looks_like_x_rate_limit_page(detail):
+                        self.request_guard.record_failure(rate_limited=True)
+                        return _failure(request, trace, "x_safety_cooldown", "X returned a rate-limit or retry-later page; collection is cooling down.")
+                    self.request_guard.record_success()
                     trace.visited_urls = _dedupe([*trace.visited_urls, detail.final_url])
                     extracted = extract_x_status(detail.text, detail.final_url)
                     if extracted and extracted.clean_text:
                         text = extracted.clean_text
                         author = extracted.author
                         published_at_raw = extracted.published_at_raw
+                except XRequestGuardBlocked:
+                    break
                 except Exception:
-                    pass
+                    self.request_guard.record_failure()
             relevance = _relevance(request.query, text)
             usefulness_score, usefulness_signals = _usefulness(request.query, text)
             items.append(
@@ -207,6 +226,16 @@ def _looks_like_x_login_page(response) -> bool:  # noqa: ANN001
     return False
 
 
+def _looks_like_x_rate_limit_page(response) -> bool:  # noqa: ANN001
+    visible_text = normalize_text(getattr(response, "visible_text", "") or "").lower()
+    return any(message in visible_text for message in (
+        "rate limit exceeded",
+        "try again later",
+        "请求过于频繁",
+        "请稍后再试",
+    ))
+
+
 def _rank_candidates(query: str, candidates: list[_SearchCandidate]) -> list[_SearchCandidate]:
     return sorted(
         candidates,
@@ -318,7 +347,7 @@ def _failure(
         error=ReaderErrorPayload(
             code=code,
             message=message,
-            retryable=code in {"browser_session_not_available", "x_login_required"},
+            retryable=code in {"browser_session_not_available", "x_login_required", "x_safety_cooldown"},
             suggested_next_action="use_local_browser_session_or_reduce_scope",
             type="PlatformSearchError",
         ),
